@@ -8,6 +8,10 @@
       try {
         document.documentElement.dataset.theme =
           localStorage.getItem('tp-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        var _fs = localStorage.getItem('tp-fs');
+        if (_fs) document.documentElement.dataset.fs = _fs;
+        var _ac = localStorage.getItem('tp-accent');
+        if (_ac) document.documentElement.dataset.accent = _ac;
       } catch (e) {}
     </script>
   </head>

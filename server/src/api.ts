@@ -2,6 +2,7 @@ import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { db, getSettings, setSettings, uid, DEFAULT_SETTINGS, ROOT } from './db.js';
+import { PROMPT_DEFAULTS } from './prompts.js';
 import { publish } from './bus.js';
 import { inventory, installToTask, removeTaskSkill } from './skills.js';
 import {
@@ -329,7 +330,11 @@ api.delete('/skills/task/:taskId/:id', (req, res) => {
 });
 
 // ---------------- settings ----------------
-api.get('/settings', (_req, res) => res.json(getSettings()));
+api.get('/settings', (_req, res) => {
+  const cur = getSettings() as Record<string, unknown>;
+  // P3：提示词模板返回“有效值”（默认模板 + 用户覆盖），设置页可直接编辑真实文本
+  res.json({ ...cur, promptTemplates: { ...PROMPT_DEFAULTS, ...((cur.promptTemplates as Record<string, string>) || {}) } });
+});
 
 api.put('/settings', (req, res) => {
   const b = req.body ?? {};

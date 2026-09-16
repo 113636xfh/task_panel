@@ -14,7 +14,14 @@ export default function Settings() {
   const [showHist, setShowHist] = useState(false);
 
   useEffect(() => {
-    api.settings().then(setS).catch(() => {});
+    api.settings().then((x) =>
+      setS({
+        ...x,
+        theme: document.documentElement.dataset.theme ?? 'dark',
+        accent: document.documentElement.dataset.accent ?? 'blue',
+        fontsize: document.documentElement.dataset.fs ?? 'm',
+      })
+    ).catch(() => {});
     api.sp().then((x) => {
       setSp(x.text);
       setSpAt(x.at);
@@ -37,12 +44,33 @@ export default function Settings() {
         execModel: s.execModel,
         planMaxTokens: s.planMaxTokens,
         workspacesBase: s.workspacesBase,
+        contextWindow: s.contextWindow ?? 0,
+        promptTemplates: s.promptTemplates ?? {},
       });
       toast(t('set.saved'));
     } catch (e: any) {
       toast(e.message, 'err');
     }
   }
+
+  // P3：外观（localStorage；documentElement 属性）
+  const setAccent = (v: string) => {
+    document.documentElement.dataset.accent = v;
+    localStorage.setItem('tp-accent', v);
+    set('accent', v);
+  };
+  const setFsUi = (v: string) => {
+    document.documentElement.dataset.fs = v;
+    localStorage.setItem('tp-fs', v);
+    set('fontsize', v);
+  };
+  const setThemeUi = (v: string) => {
+    document.documentElement.dataset.theme = v;
+    localStorage.setItem('tp-theme', v);
+    set('theme', v);
+    // 通知顶栏按钮同步（Layout 监听）
+    window.dispatchEvent(new CustomEvent('tp-theme-apply'));
+  };
 
   async function savePrompt() {
     try {
@@ -66,6 +94,65 @@ export default function Settings() {
       </div>
 
       <div className="settings-grid">
+        <div className="card skill-box">
+          <div className="card-h">{t('set.appearance')}</div>
+          <div className="card-b">
+            <div className="set-row">
+              <span className="lab">
+                {t('set.theme')}
+              </span>
+              <span className="ctl">
+                {(['light', 'dark'] as const).map((v) => (
+                  <button
+                    key={v}
+                    data-testid={`theme-opt-${v}`}
+                    className={`btn sm ${s.theme === v ? 'primary' : 'ghost'}`}
+                    onClick={() => setThemeUi(v)}
+                  >
+                    {v === 'light' ? t('set.theme.light') : t('set.theme.dark')}
+                  </button>
+                ))}
+              </span>
+            </div>
+            <div className="set-row">
+              <span className="lab">
+                {t('set.accent')}
+                <span className="h">{t('set.accent.hint')}</span>
+              </span>
+              <span className="ctl">
+                {(['blue', 'indigo'] as const).map((v) => (
+                  <button
+                    key={v}
+                    data-testid={`accent-opt-${v}`}
+                    className={`btn sm ${(s.accent ?? 'blue') === v ? 'primary' : 'ghost'}`}
+                    onClick={() => setAccent(v)}
+                  >
+                    {v === 'blue' ? t('set.accent.blue') : t('set.accent.indigo')}
+                  </button>
+                ))}
+              </span>
+            </div>
+            <div className="set-row">
+              <span className="lab">
+                {t('set.fontsize')}
+                <span className="h">{t('set.fontsize.hint')}</span>
+              </span>
+              <span className="ctl">
+                {(['s', 'm', 'l'] as const).map((v) => (
+                  <button
+                    key={v}
+                    data-testid={`fs-opt-${v}`}
+                    className={`btn sm ${(s.fontsize ?? 'm') === v ? 'primary' : 'ghost'}`}
+                    onClick={() => setFsUi(v)}
+                  >
+                    {t(`set.fs.${v}`)}
+                  </button>
+                ))}
+              </span>
+            </div>
+          </div>
+        </div>
+
         <div className="card skill-box">
           <div className="card-h">{t('set.run')}</div>
           <div className="card-b">
@@ -96,6 +183,23 @@ export default function Settings() {
                 <span className="h">{t('set.wsBase.hint')}</span>
               </span>
               <input className="inp mono" value={s.workspacesBase} onChange={(e) => set('workspacesBase', e.target.value)} />
+            </div>
+            <div className="set-row">
+              <span className="lab">
+                {t('set.ctxwin')}
+                <span className="h">{t('set.ctxwin.hint')}</span>
+              </span>
+              <span className="ctl">
+                <input
+                  className="inp num-inp"
+                  style={{ width: 110 }}
+                  type="number"
+                  min={0}
+                  data-testid="input-ctxwin"
+                  value={s.contextWindow ?? 0}
+                  onChange={(e) => set('contextWindow', Number(e.target.value))}
+                /> token
+              </span>
             </div>
           </div>
         </div>
@@ -137,6 +241,46 @@ export default function Settings() {
                 <input type="number" className="inp num-inp" min={1} value={s.retryMax} onChange={(e) => set('retryMax', Number(e.target.value))} /> {t('set.times')}
               </span>
             </div>
+          </div>
+        </div>
+
+        <div className="card skill-box" style={{ gridColumn: '1 / -1' }}>
+          <div className="card-h">
+            {t('set.tpl')}
+            <span style={{ color: 'var(--text-3)', fontSize: 11.5, fontWeight: 400 }}>{t('set.tpl.hint')}</span>
+          </div>
+          <div className="card-b">
+            {(['plan', 'exec', 'judge', 'rework'] as const).map((k) => (
+              <div key={k} style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                  <b style={{ fontSize: 12.5 }}>{t(`set.tpl.${k}`)}</b>
+                  <code style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                    {k === 'plan' ? '{{title}} {{description}} {{acceptance}} {{test_cmd}} {{extra_prompt}} {{skills}} {{rework}}' : k === 'exec' ? '（静态模板，无占位符）' : k === 'judge' ? '{{test_cmd}} {{code}} {{items}}' : '{{msgs}}'}
+                  </code>
+                  <span style={{ flex: 1 }} />
+                  <button
+                    className="btn ghost sm"
+                    data-testid={`tpl-reset-${k}`}
+                    onClick={() => {
+                      const next = { ...(s.promptTemplates ?? {}) };
+                      delete next[k];
+                      set('promptTemplates', next);
+                      toast(t('set.tpl.resetDone'));
+                    }}
+                  >
+                    {t('set.tpl.reset')}
+                  </button>
+                </div>
+                <textarea
+                  className="inp mono"
+                  rows={4}
+                  data-testid={`tpl-${k}`}
+                  value={s.promptTemplates?.[k] ?? ''}
+                  placeholder={t('set.empty')}
+                  onChange={(e) => set('promptTemplates', { ...(s.promptTemplates ?? {}), [k]: e.target.value })}
+                />
+              </div>
+            ))}
           </div>
         </div>
 

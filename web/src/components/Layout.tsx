@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { SquareKanban, Wrench, Settings2, Moon, Sun, Globe } from 'lucide-react';
+import { SquareKanban, Wrench, Settings2, Moon, Sun, Globe, Type } from 'lucide-react';
 import { onEvent, wsState } from '../lib/ws';
 import { api } from '../lib/api';
 import type { Runtime } from '../lib/types';
@@ -49,6 +49,20 @@ export default function Layout() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('tp-theme', theme);
   }, [theme]);
+
+  // 设置页切换主题时同步顶栏按钮（避免两处状态漂移）
+  useEffect(() => {
+    const h = () => setTheme(localStorage.getItem('tp-theme') ?? 'dark');
+    window.addEventListener('tp-theme-apply', h);
+    return () => window.removeEventListener('tp-theme-apply', h);
+  }, []);
+
+  // P3：字体大小（S/M/L，循环切换；#root zoom 整体缩放）
+  const [fs, setFs] = useState(localStorage.getItem('tp-fs') ?? 'm');
+  useEffect(() => {
+    document.documentElement.dataset.fs = fs;
+    localStorage.setItem('tp-fs', fs);
+  }, [fs]);
 
   useEffect(() => {
     const off = onEvent((ev) => {
@@ -143,6 +157,15 @@ export default function Layout() {
           >
             <Globe size={13} />
             <span className="lang-label">{locale === 'zh' ? 'EN' : '中文'}</span>
+          </button>
+          <button
+            className="btn ghost sm"
+            data-testid="btn-fontsize"
+            title={t('topbar.fontsize')}
+            onClick={() => setFs(fs === 'm' ? 'l' : fs === 'l' ? 's' : 'm')}
+          >
+            <Type size={13} />
+            <span className="lang-label">{fs.toUpperCase()}</span>
           </button>
           <button
             className="btn ghost sm"

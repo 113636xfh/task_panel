@@ -77,6 +77,7 @@ function NewTaskModal({
   const [branchMin, setBranchMin] = useState(30);
   const [acceptance, setAcceptance] = useState('');
   const [testCmd, setTestCmd] = useState('');
+  const [ctxWin, setCtxWin] = useState(0); // P3：任务级会话长度（0 = 跟随全局默认）
   const [extra, setExtra] = useState('');
   const [picked, setPicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -117,6 +118,7 @@ function NewTaskModal({
         extra_prompt: extra.trim(),
         skills: picked.join(','),
         images: imgFiles.map(({ name, data }) => ({ name, data })),
+        context_window: ctxWin > 0 ? ctxWin : 0,
       });
       toast(t('modal.created'));
       onCreated();
@@ -263,9 +265,20 @@ function NewTaskModal({
           </div>
         </div>
         <div className="m-f">
-          <span className="mono" style={{ color: 'var(--text-3)', marginRight: 'auto', fontSize: 11 }}>
-            {t('modal.prio')}
+          <span className="mono" style={{ color: 'var(--text-3)', fontSize: 11 }} title={t('modal.ctxwin.hint')}>
+            {t('modal.ctxwin')}
           </span>
+          <input
+            className="inp mono"
+            style={{ width: 96 }}
+            type="number"
+            min={0}
+            data-testid="input-task-ctxwin"
+            value={ctxWin}
+            onChange={(e) => setCtxWin(Math.max(0, Number(e.target.value) || 0))}
+            placeholder="0"
+          />
+          <span style={{ flex: 1 }} />
           <select className="inp" style={{ width: 90 }} value={priority} onChange={(e) => setPriority(Number(e.target.value))}>
             <option value={0}>P0</option>
             <option value={1}>P1</option>

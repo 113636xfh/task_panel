@@ -7,6 +7,12 @@
 
   --sb: 232px; /* sidebar 宽 */
   --r-sm: 4px; --r-md: 6px; --r-lg: 10px;
+  --fs-scale: 1; /* 字体缩放（S/M/L），#root 用 zoom 整体缩放 */
+
+  /* 强调色（P3 默认：蓝） */
+  --accent: #2f6feb;
+  --accent-hi: #4d83f0;
+  --accent-soft: rgba(47, 111, 235, 0.10);
 
   /* 中性（亮） */
   --bg: #ffffff;
@@ -26,12 +32,13 @@
 
   /* 状态（亮） */
   --st-queued: #6b7280;      --st-queued-bg: #f2f3f6;
+  --st-ready: #d97706;        --st-ready-bg: #fff7ed;        /* P3：橙 = 等用户操作 */
   --st-planning: #b08514;    --st-planning-bg: #faf6e9;
   --st-waiting: #d97706;     --st-waiting-bg: #fff7ed;
   --st-executing: #2f6feb;   --st-executing-bg: #edf3fe;
   --st-blocked: #ef4444;     --st-blocked-bg: #fef2f2;
   --st-testing: #0f766e;     --st-testing-bg: #e8f7f5;
-  --st-confirm: #7170ff;     --st-confirm-bg: #f1effe;
+  --st-confirm: #d97706;     --st-confirm-bg: #fff7ed;      /* P3：待确认 = 橙（等用户拍板） */
   --st-done: #1a7f37;        --st-done-bg: #eafbef;
   --st-failed: #b3403a;      --st-failed-bg: #fdecea;
   --st-interrupted: #6b7280; --st-interrupted-bg: #f2f3f6;
@@ -48,21 +55,40 @@
   --text-3: #6f727a;
   --line: #26282e;
   --line-strong: #343741;
-  --accent: #7170ff;
-  --accent-hi: #8b90ff;
-  --accent-soft: rgba(113, 112, 255, 0.16);
+  --accent: #5b9bff;
+  --accent-hi: #7caeff;
+  --accent-soft: rgba(91, 155, 255, 0.16);
   --sh: 0 8px 24px rgba(0, 0, 0, 0.5);
   --sh-lg: 0 16px 48px rgba(0, 0, 0, 0.7);
 
   --st-queued: #9ca0a8;      --st-queued-bg: #1d1e22;
+  --st-ready: #f0954a;       --st-ready-bg: #2b1e12;
   --st-planning: #e6b84c;    --st-planning-bg: #2a2410;
   --st-waiting: #f0954a;     --st-waiting-bg: #2b1e12;
   --st-executing: #6b9bef;   --st-executing-bg: #152238;
   --st-blocked: #f87171;     --st-blocked-bg: #2e1515;
   --st-testing: #34b3a4;     --st-testing-bg: #12241f;
-  --st-confirm: #8b90ff;     --st-confirm-bg: #1d1c33;
+  --st-confirm: #f0954a;     --st-confirm-bg: #2b1e12;
   --st-done: #4db06d;        --st-done-bg: #14261a;
   --st-failed: #c96b62;      --st-failed-bg: #2a1715;
   --st-interrupted: #9ca0a8; --st-interrupted-bg: #1d1e22;
   --st-cancelled: #7d818a;   --st-cancelled-bg: #1a1b1e;
 }
+
+/* P3：强调色切换（蓝为默认；靛蓝保留为选项） */
+[data-accent='indigo'] {
+  --accent: #5e6ad2;
+  --accent-hi: #7170ff;
+  --accent-soft: rgba(94, 106, 210, 0.10);
+}
+[data-theme='dark'][data-accent='indigo'] {
+  --accent: #7170ff;
+  --accent-hi: #8b90ff;
+  --accent-soft: rgba(113, 112, 255, 0.16);
+}
+
+/* P3：字体大小（S/M/L）—— #root 整体 zoom 缩放 */
+[data-fs='s'] { --fs-scale: 0.92; }
+[data-fs='m'] { --fs-scale: 1; }
+[data-fs='l'] { --fs-scale: 1.08; }
+#root { zoom: var(--fs-scale, 1); }
