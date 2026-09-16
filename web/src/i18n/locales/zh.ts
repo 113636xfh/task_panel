@@ -9,7 +9,7 @@ export const zh: Record<string, string> = {
   'nav.skills': '技能',
   'nav.settings': '设置',
 
-  'topbar.stub': 'stub 执行器',
+  'topbar.executor': 'pi 执行器',
 
   'runtime.title': 'RUNTIME',
   'runtime.exec': '执行',
@@ -48,7 +48,7 @@ export const zh: Record<string, string> = {
   'boards.title': '看板',
   'boards.count': '{n} 个看板',
   'boards.empty': '还没有看板 —— 点右上角「新看板」开始。',
-  'boards.note': 'P0 说明：执行器为 stub 模拟，用于联调 UI / 调度 / 事件流；P1 接入真实 pi 执行。',
+  'boards.note': '每个任务一个独立 pi 会话（--mode rpc），在工作目录内自主规划→执行→测试→验收。',
   'boards.newBtn': '新看板',
   'boards.newPh': '看板名称，回车创建',
   'boards.create': '创建',
@@ -98,7 +98,7 @@ export const zh: Record<string, string> = {
   'modal.test': '测试命令（可选）',
   'modal.testPh': '如 npm test',
   'modal.extra': '任务专属系统提示词（可选，追加在全局之后）',
-  'modal.extraPh': '本任务专属的额外指令（P0 stub 阶段仅存储展示）',
+  'modal.extraPh': '本任务专属的额外指令（会注入执行提示词）',
   'modal.skills': '附加技能/扩展（任务级，可选）',
   'modal.skills.empty': '全局/项目层暂无可装项',
   'modal.skill.global': '全局',

@@ -84,11 +84,18 @@ function startTask(t: TaskRow) {
   if (resume) {
     const plan = JSON.parse(t.plan_json!) as Plan;
     const answers = t.answers_json ? (JSON.parse(t.answers_json) as Record<string, string>) : {};
-    const pending = (db.prepare('SELECT COUNT(*) AS c FROM task_user_msgs WHERE task_id=? AND delivered_at IS NULL').get(t.id) as { c: number }).c;
+    const pendRows = (db.prepare('SELECT text FROM task_user_msgs WHERE task_id=? AND delivered_at IS NULL ORDER BY id').all(t.id) as { text: string }[]).map((r) => r.text);
     db.prepare('UPDATE task_user_msgs SET delivered_at=? WHERE task_id=? AND delivered_at IS NULL').run(Date.now(), t.id);
-    runner.resume(t, plan, answers, pending);
+    runner.resume(t, plan, answers, pendRows).catch((e) => {
+      emitEvent(t.id, 'system', { text: `恢复执行出错：${String(e)}` });
+      onRelease(t.id);
+    });
   } else {
-    runner.start(t);
+    runner.start(t).catch((e) => {
+      emitEvent(t.id, 'system', { text: `启动失败：${String(e)}` });
+      emitEvent(t.id, 'phase', { phase: 'failed' }, '');
+      onRelease(t.id);
+    });
   }
 }
 
@@ -99,6 +106,22 @@ function tick() {
   for (const t of rows) {
     if (runners.size >= s.concurrency) break;
     startTask(t);
+  }
+  // 分支超时：无人回答 → 自动采用默认答案（设计文档 §3）
+  const waiting = db.prepare("SELECT * FROM tasks WHERE status='waiting_input'").all() as TaskRow[];
+  for (const t of waiting) {
+    if (t.branch_mode !== 'manual' || !t.plan_json) continue;
+    let plan: Plan;
+    try { plan = JSON.parse(t.plan_json) as Plan; } catch { continue; }
+    const answered: Record<string, string> = t.answers_json ? (JSON.parse(t.answers_json) as Record<string, string>) : {};
+    const open = (plan.branch_questions ?? []).filter((q) => !(q.id in answered));
+    if (!open.length) continue;
+    const row = db.prepare("SELECT ts FROM task_events WHERE task_id=? AND kind='phase' ORDER BY id DESC LIMIT 1").get(t.id) as { ts: number } | undefined;
+    if (row && Date.now() - row.ts >= s.branchTimeoutMin * 60_000) {
+      const ans: Record<string, string> = {};
+      for (const q of open) ans[q.id] = q.default || q.options?.[0]?.label || '';
+      answerTask(t.id, ans, 'timeout_default');
+    }
   }
 }
 
@@ -122,15 +145,15 @@ export function recoverOrphans() {
 }
 
 // ---------------- 用户操作 ----------------
-export function answerTask(taskId: string, answers: Record<string, string>) {
+export function answerTask(taskId: string, answers: Record<string, string>, mode: 'user' | 'timeout_default' = 'user') {
   const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(taskId) as TaskRow | undefined;
   if (!t || t.status !== 'waiting_input') return { ok: false, error: '任务不在等待回答状态' };
   const prev = t.answers_json ? (JSON.parse(t.answers_json) as Record<string, string>) : {};
   const merged = { ...prev, ...answers };
   db.prepare('UPDATE tasks SET answers_json=? WHERE id=?').run(JSON.stringify(merged), taskId);
   for (const [qid, a] of Object.entries(answers)) {
-    db.prepare('INSERT INTO branch_answers (task_id, question_id, answer, mode, at) VALUES (?,?,?,?,?)').run(taskId, qid, a, 'user', Date.now());
-    emitEvent(taskId, 'user_message', { text: `对分支问题 ${qid} 的回答: ${a}` });
+    db.prepare('INSERT INTO branch_answers (task_id, question_id, answer, mode, at) VALUES (?,?,?,?,?)').run(taskId, qid, a, mode, Date.now());
+    emitEvent(taskId, 'user_message', { text: `对分支问题 ${qid} 的回答${mode === 'timeout_default' ? '（超时，自动采用默认答案）' : ''}: ${a}` });
   }
   db.prepare('UPDATE tasks SET status=\'queued\' WHERE id=?').run(taskId);
   publish('task.status', { taskId, to: 'queued', from: 'waiting_input' });

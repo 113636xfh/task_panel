@@ -427,6 +427,10 @@ select.inp { appearance: auto; }
   padding: 6px 11px; max-width: 85%;
 }
 .ev-user .ev-body::after { content: ' · 你'; color: var(--text-3); font-size: 10.5px; margin-left: 5px; }
+.ev-assistant .ev-body {
+  background: var(--bg-panel); border: 1px solid var(--line);
+  border-radius: 2px 10px 10px 10px; padding: 7px 11px; max-width: 92%;
+}
 .ev-block {
   background: var(--st-blocked-bg); border: 1px solid color-mix(in srgb, var(--st-blocked) 45%, var(--line));
   border-radius: var(--r-md); padding: 7px 10px; color: var(--st-blocked); font-weight: 550;

@@ -133,7 +133,7 @@ export default function Layout() {
           <span className="title">{t(titleKey)}</span>
           <span className="crumb">{loc.pathname}</span>
           <span className="spacer" />
-          <span className="ver-tag">P0 · {t('topbar.stub')}</span>
+          <span className="ver-tag">P1 · {t('topbar.executor')}</span>
           <button
             className="btn ghost sm"
             title="English / 简体中文"

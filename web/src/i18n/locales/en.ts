@@ -9,7 +9,7 @@ export const en: Record<string, string> = {
   'nav.skills': 'Skills',
   'nav.settings': 'Settings',
 
-  'topbar.stub': 'stub executor',
+  'topbar.executor': 'pi executor',
 
   'runtime.title': 'RUNTIME',
   'runtime.exec': 'running',
@@ -47,7 +47,7 @@ export const en: Record<string, string> = {
   'boards.title': 'Boards',
   'boards.count': '{n} board{s}',
   'boards.empty': 'No boards yet — click "New board" at the top right to start.',
-  'boards.note': 'P0 note: the executor is a stub for UI / scheduling / event-stream integration; P1 wires in real pi execution.',
+  'boards.note': 'Each task runs in its own pi session (--mode rpc), autonomously planning → executing → testing → acceptance in its workspace.',
   'boards.newBtn': 'New board',
   'boards.newPh': 'Board name — press Enter to create',
   'boards.create': 'Create',
@@ -97,7 +97,7 @@ export const en: Record<string, string> = {
   'modal.test': 'Test command (optional)',
   'modal.testPh': 'e.g. npm test',
   'modal.extra': 'Task-specific system prompt (optional, appended after global)',
-  'modal.extraPh': 'Extra instructions for this task only (stored/displayed in P0 stub phase)',
+  'modal.extraPh': 'Extra instructions for this task only (injected into the execution prompt)',
   'modal.skills': 'Extra skills/extensions (task level, optional)',
   'modal.skills.empty': 'Nothing installable from global/project layers',
   'modal.skill.global': 'Global',

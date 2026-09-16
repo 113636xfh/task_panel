@@ -19,7 +19,8 @@ export const DEFAULT_SETTINGS = {
   branchTimeoutMin: 30,
   retryMax: 3,
   endpoint: 'http://192.168.2.15:8080/v1',
-  provider: 'local-vllm',
+  // 与用户 pi 的 ~/.pi/agent/models.json 中 provider 名一致（vLLM 服务）
+  provider: 'fastllm',
   execModel: 'Qwen3.8-27B-W4A16-AWQ',
   planMaxTokens: 8192,
   workspacesBase: path.join(ROOT, 'workspaces'),

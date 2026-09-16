@@ -19,6 +19,7 @@ import {
   ImagePlus,
   PanelBottomOpen,
   PanelBottomClose,
+  Bot,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { onEvent } from '../lib/ws';
@@ -38,6 +39,14 @@ function EvRow({ ev, plan, imgBase }: { ev: TaskEvent; plan: Plan | null; imgBas
       return (
         <div className="ev ev-phase">
           <span className="ev-body">{t(`status.${p.phase}`) ?? p.phase}</span>
+        </div>
+      );
+    case 'assistant':
+      return (
+        <div className="ev ev-assistant">
+          {time}
+          <Bot size={13} className="ev-ico" />
+          <div className="ev-body"><MD text={p.text} imgBase={imgBase} /></div>
         </div>
       );
     case 'system':
