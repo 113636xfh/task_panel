@@ -7,8 +7,8 @@ Task Panel
 ├─ /boards                     看板列表（默认落地页）
 ├─ /boards/:id                 看板详情（七列任务板 + 任务卡）
 ├─ /boards/:id/tasks/:taskId   任务详情（计划/分支问答/资产/留言板/验收）
-├─ /skills                     Skills & Extensions 总览（全局 vs 项目层）
-└─ /settings                   运行时与模型设置（并发、超时、重试、模型）
+├─ /skills                     Skills & 扩展（三层继承：全局/项目/任务）
+└─ /settings                   运行时与模型设置（并发、超时、重试、模型、**全局系统提示词**）
 ```
 
 ## 2. 全局框架（所有页面共用）

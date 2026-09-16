@@ -77,7 +77,10 @@ queued → planning → waiting_input ──────────────
 每个任务阶段 = 一个 pi 子进程，`pi --mode rpc`：
 
 ```
-spawn("pi", ["--mode","rpc","--provider","local-vllm","--model","local-vllm/Qwen3.8-27B-W4A16-AWQ"],
+spawn("pi", ["--mode","rpc",
+             "--provider","local-vllm",
+             "--model","local-vllm/Qwen3.8-27B-W4A16-AWQ",
+             ...(finalPrompt ? ["--system-prompt", finalPrompt] : [])],
       { cwd: taskWorkspace })
 ```
 
@@ -86,6 +89,29 @@ spawn("pi", ["--mode","rpc","--provider","local-vllm","--model","local-vllm/Qwen
 - **首行** `{"type":"session",...}` 含 session id；pi 将 session 持久化为 JSONL 文件（`--session-dir <workspaces/t-X/.pi-sessions>`）
 - **终止**：`{"type":"abort"}` 后 SIGTERM；进程退出码与 stderr 落库
 - **恢复（全量重放）**：重新 spawn 时指向同一 session 文件（resume），pi 载入完整历史，再 `prompt` 发送"继续执行"指令。留言板 = 该 session 事件流的持久化投影（`task_events` 表），前端渲染即留言板。
+
+### 4.0 系统提示词合成与技能生效集
+
+**系统提示词（两组）**
+1. **全局**（设置页维护）：settings 表 `agent_system_prompt {text, at}`；历史保留 5 版（`prompt_history`）
+2. **任务专属**（创建模态补充框，可选）：`tasks.extra_prompt`
+
+```
+final = 有全局 ? (有专属 ? 全局 + "\n\n【任务专属指令】\n" + 专属 : 全局)
+            : (有专属 ? "【任务专属指令】\n" + 专属 : (不传 --system-prompt, 用 pi 默认))
+```
+- **每次进程新起/恢复时读取最新版**：中断恢复的任务也用新的全局提示词（用户明确要求）；已运行中的会话不受影响
+- 仅通过子进程参数传入，不碰 `~/.pi/agent/`，全局 pi CLI 不受影响（pi 文档：`--system-prompt` 只替换该会话默认提示词，context files 与 skills 照常附加）
+
+**技能生效集（三层继承）**
+1. 全局 `~/.pi/agent/skills|extensions`（+ `~/.agents/skills`）——所有任务默认继承，页面只读
+2. 项目层：任务为「共享项目目录」时，该目录 `.pi/skills|extensions` 全目录任务共享（任一任务添加 → 同目录任务自动继承）
+3. 任务级：UI 手动添加 → 复制到该任务 workspace `.pi/`，仅该任务生效
+
+**用户留言（steer 通道）**
+- 任务活跃且有 pi 进程：流式进行中发 `{"type":"steer","message"}`（当前工具轮结束后、下次 LLM 调用前注入）；非流式发 `prompt`
+- 任务非活跃（queued/blocked/waiting_input 等）：写入 `task_user_msgs` 队列，下次启动/恢复时拼入提示词
+- 所有留言落 `task_events`（kind=user_message）并广播 `task.user_message`
 
 ### 4.1 阶段提示词
 
@@ -149,7 +175,7 @@ spawn("pi", ["--mode","rpc","--provider","local-vllm","--model","local-vllm/Qwen
 kind ∈
   task.created | task.status{to,from} | task.planned{plan} |
   task.question.answered | task.blocked{block} | task.block_answered{answer} |
-  task.assets.updated |
+  task.user_message{text} | task.assets.updated |
   task.event{event: <pi 原始事件, 压缩> }        ← 留言板流（批量 100ms 合帧）
   task.review{review} | task.confirm_requested |
   runtime.slots{used,total,queue,awaiting,blocked}
@@ -165,11 +191,13 @@ tasks(id, board_id, num, title, description, priority P0..P3,
       status, created_at, started_at, finished_at,
       workspace_path, branch_mode manual|auto, branch_timeout_min,
       acceptance_text, test_cmd, preemptible,
-      retry_count, plan_json, answers_json, review_json, checkpoint_json)
+      retry_count, extra_prompt, plan_json, answers_json, review_json, checkpoint_json)
 task_events(id, task_id, seq, ts, kind, payload_json)      -- 留言板(不可变, 追加)
 task_assets(id, task_id, task_event_id, kind, name, path_or_url, summary)
 task_blocks(id, task_id, question, context_json, options_json, recommended,
             answer, mode user|timeout_auto, asked_at, answered_at, status)
+task_user_msgs(id, task_id, text, at, delivered_at)   -- 留言队列(任务非活跃时入队, 送达后置 delivered_at)
+prompt_history(id, text, at)                          -- 全局系统提示词历史(≤5)
 branch_answers(id, task_id, question_id, answer, mode user|timeout_default, at)
 checkpoints(id, task_id, at_status, session_file, summary, at)
 settings(key, value_json)                                   -- 并发/超时/重试/模型/端点
