@@ -112,14 +112,18 @@ function startTask(t: TaskRow) {
 
 function tick() {
   const s = getSettings();
-  if (runners.size >= s.concurrency) return;
-  // queued 优先于 interrupted（新任务优先，被打断的随后补上）
-  const rows = db.prepare(
-    "SELECT * FROM tasks WHERE status IN ('queued','interrupted') ORDER BY (status='queued') DESC, priority ASC, created_at ASC"
-  ).all() as TaskRow[];
-  for (const t of rows) {
-    if (runners.size >= s.concurrency) break;
-    startTask(t);
+  if (runners.size >= s.concurrency) {
+    // 无空位：看高优先级排队任务能否抢占低优先级运行任务（P2 抢占项）
+    preemptForHighPriority();
+  } else {
+    // queued 优先于 interrupted（新任务优先，被打断的随后补上）
+    const rows = db.prepare(
+      "SELECT * FROM tasks WHERE status IN ('queued','interrupted') ORDER BY (status='queued') DESC, priority ASC, created_at ASC"
+    ).all() as TaskRow[];
+    for (const t of rows) {
+      if (runners.size >= s.concurrency) break;
+      startTask(t);
+    }
   }
   // 分支超时：无人回答 → 自动采用默认答案（设计文档 §3）
   const waiting = db.prepare("SELECT * FROM tasks WHERE status='waiting_input'").all() as TaskRow[];
@@ -140,6 +144,45 @@ function tick() {
 }
 
 let started = false;
+
+/**
+ * 优先级抢占（P2）：槽位全满时，若排队最高优先级任务是 P0/P1，
+ * 抢占占用槽位中优先级最低（≥P2）的运行任务 → 置 interrupted（带 checkpoint，
+ * tick 会在有空位时自动恢复）。规则保守（只有 P0/P1 能抢、只抢 P2/P3），
+ * 避免 P0↔P1 或同级之间的抖动。每 tick 最多抢一个。
+ */
+function preemptForHighPriority() {
+  const top = db
+    .prepare(
+      "SELECT id, num, priority FROM tasks WHERE status IN ('queued','interrupted') ORDER BY (status='queued') DESC, priority ASC, created_at ASC LIMIT 1"
+    )
+    .get() as { id: string; num: number; priority: number } | undefined;
+  if (!top || top.priority > 1) return; // P2 及以下不能抢
+  const victims = [...runners.keys()]
+    .map((id) => db.prepare('SELECT id, priority, status FROM tasks WHERE id=?').get(id) as { id: string; priority: number; status: string } | undefined)
+    .filter((v): v is { id: string; priority: number; status: string } => !!v && v.priority >= 2);
+  if (!victims.length) return;
+  const victim = victims.sort((a, b) => b.priority - a.priority)[0];
+  if (victim.priority <= top.priority) return; // 同级不抢
+
+  const r = runners.get(victim.id);
+  if (r) {
+    try {
+      r.stop(); // onRelease 会释放槽位
+    } catch { /* ignore */ }
+  }
+  db.prepare("UPDATE tasks SET status='interrupted' WHERE id=?").run(victim.id);
+  db.prepare('INSERT INTO checkpoints (task_id, at_status, summary, at) VALUES (?,?,?,?)').run(
+    victim.id, 'preempted', `被 P${top.priority} 任务 #${top.num} 抢占，待空位自动恢复`, Date.now()
+  );
+  emitEvent(victim.id, 'system', {
+    text: `被抢占：P${top.priority} 任务 #${top.num} 需要槽位。本任务标记为「被抢占」，有空位时将从断点自动恢复。`,
+  });
+  publish('task.status', { taskId: victim.id, to: 'interrupted', from: victim.status });
+  // 立即再排一次，让高优任务马上补上（不等下一个 tick）
+  setTimeout(() => tick(), 100);
+}
+
 export function startScheduler() {
   if (started) return;
   started = true;

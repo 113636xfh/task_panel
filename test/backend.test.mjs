@@ -251,3 +251,30 @@ test('优雅退出（SIGTERM 路径）：服务可再次启动', async () => {
   const h = await a.get('/health');
   assert.equal(h.ok, true);
 });
+
+// ---------------- 优先级抢占（P2） ----------------
+
+test('抢占：排队 P0 抢占运行中 P2；P0 先完成，被抢占任务从断点自动恢复完成', async () => {
+  await a.put('/settings', { concurrency: 1 });
+  // P2 慢任务占唯一槽位
+  const slow = await a.post(`/boards/${boardId.v}/tasks`, makeTaskPayload({ title: '#slow 慢任务-抢占 victim', priority: 2, wsName: `pv2-${Date.now().toString(36)}` }));
+  await waitForStatus(S.base, slow.id, 'executing');
+  // P0 任务入队 → 应在 1~2s 内触发抢占
+  const p0 = await a.post(`/boards/${boardId.v}/tasks`, makeTaskPayload({ title: 'P0 高优任务-抢占', priority: 0, wsName: `pv0-${Date.now().toString(36)}` }));
+  const hit = await waitForStatus(S.base, slow.id, 'interrupted', 8000).catch(() => null);
+  assert.ok(hit, 'P2 任务应被抢占 → interrupted');
+  const evs = await a.get(`/tasks/${slow.id}/events?since=0`);
+  assert.ok(evs.some((e) => e.kind === 'system' && e.payload.text.includes('被抢占')), '应有“被抢占”系统事件');
+  // P0 先跑完
+  await waitForStatus(S.base, p0.id, 'awaiting_confirm', 15000);
+  await a.post(`/tasks/${p0.id}/confirm`);
+  const p0row = await waitForStatus(S.base, p0.id, 'done', 5000);
+  assert.equal(p0row.status, 'done');
+  // 被抢占的 P2 任务随后自动恢复（断点续跑）→ 完成
+  await waitForStatus(S.base, slow.id, 'awaiting_confirm', 30000);
+  await a.post(`/tasks/${slow.id}/confirm`);
+  const srow = await a.get(`/tasks/${slow.id}`);
+  assert.equal(srow.status, 'done');
+  assert.ok(p0row.finished_at < srow.finished_at, 'P0 应先于 P2 完成');
+  await a.put('/settings', { concurrency: 2 });
+});
