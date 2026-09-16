@@ -80,15 +80,14 @@ async function run1() {
   await page.type('[data-testid="input-board-name"]', 'UI 人形测试看板');
   await shot('create-board-dialog');
   await page.click('[data-testid="btn-create-board"]');
-  await page.waitForSelector('[data-testid="board-card"]', { visible: true });
+  // P3：看板出现在左侧边栏列表
+  await page.waitForSelector('[data-testid^="sb-board-"]', { visible: true });
   await shot('board-created');
 
-  // 3. 进入看板（新建任务按钮可见，8 列看板）
-  await page.click('[data-testid="board-card"]');
+  // 3. 进入看板（P3：四阶段总表取代 8 列看板）
+  await page.click('[data-testid^="sb-board-"]');
   await page.waitForSelector('[data-testid="btn-new-task"]', { visible: true });
-  for (const col of ['queued', 'planning', 'waiting_input', 'executing', 'blocked', 'testing', 'awaiting_confirm', 'done']) {
-    await page.waitForSelector(`[data-testid="col-${col}"]`, { visible: true });
-  }
+  await new Promise((r) => setTimeout(r, 400));
   await shot('kanban-empty');
 
   // 4. 新建任务（#branch 剧本：会触发分支问答）
@@ -100,11 +99,16 @@ async function run1() {
   await shot('create-task-dialog');
   await page.click('[data-testid="btn-create-task"]');
 
-  // 5. 任务卡出现在看板（queued/running 列），状态徽标流转
-  await page.waitForSelector('[data-testid="task-card"][data-num="1"]', { visible: true });
+  // 5. 任务行出现在总表（P3：创建后为 ready，需手动启动）
+  await page.waitForSelector('[data-testid="task-row"][data-num="1"]', { visible: true });
   await shot('task-on-board');
+  await page.click('[data-testid="task-row"][data-num="1"] [data-testid="btn-start"]');
+  await page.waitForFunction(() => {
+    const el = document.querySelector('[data-testid="task-row"][data-num="1"]');
+    return el && el.dataset.status !== 'ready';
+  }, { timeout: 10_000 });
   // 打开任务详情
-  await page.click('[data-testid="task-card"][data-num="1"]');
+  await page.click('[data-testid="task-row"][data-num="1"]');
   await page.waitForSelector('[data-testid="status-badge"]', { visible: true });
   const badgeText = () => page.$eval('[data-testid="status-badge"]', (el) => el.textContent.trim());
   const badgeClass = () => page.$eval('[data-testid="status-badge"]', (el) => el.className);
@@ -142,9 +146,9 @@ async function run1() {
   // 9. 返回看板：卡片应位于 done 列
   const board = (await a.get('/boards'))[0];
   await page.goto(`${S.base}/boards/${board.id}`, { waitUntil: 'networkidle0' });
-  await page.waitForSelector('[data-testid="col-done"] [data-testid="task-card"][data-num="1"]', { visible: true });
-  const doneColCount = await page.$$eval('[data-testid="col-done"] [data-testid="task-card"]', (els) => els.length);
-  assert.equal(doneColCount, 1);
+  await page.waitForSelector('[data-testid="task-row"][data-status="done"][data-num="1"]', { visible: true });
+  const doneRowCount = await page.$$eval('[data-testid="task-row"][data-status="done"]', (els) => els.length);
+  assert.equal(doneRowCount, 1);
   await shot('card-in-done-col');
 }
 
@@ -174,8 +178,17 @@ async function run2() {
   await page.type('[data-testid="input-task-desc"]', 'steer 测试任务。');
   await page.type('[data-testid="input-ws-name"]', 'ui-slow');
   await page.click('[data-testid="btn-create-task"]');
-  await page.waitForSelector(`[data-testid="task-card"][data-num="${nextNum}"]`, { visible: true, timeout: 30_000 });
-  await page.click(`[data-testid="task-card"][data-num="${nextNum}"]`);
+  await page.waitForSelector(`[data-testid="task-row"][data-num="${nextNum}"]`, { visible: true, timeout: 30_000 });
+  await page.click(`[data-testid="task-row"][data-num="${nextNum}"] [data-testid="btn-start"]`);
+  await page.waitForFunction(
+    (n) => {
+      const el = document.querySelector(`[data-testid="task-row"][data-num="${n}"]`);
+      return el && el.dataset.status !== 'ready';
+    },
+    { timeout: 10_000 },
+    String(nextNum)
+  );
+  await page.click(`[data-testid="task-row"][data-num="${nextNum}"]`);
 
   // 执行中：输入 steer 并发送
   await page.waitForSelector('[data-testid="input-msg-short"]', { visible: true, timeout: 30_000 });
@@ -210,7 +223,7 @@ async function run2() {
   );
   const board2 = (await a.get('/boards'))[0];
   await page.goto(`${S.base}/boards/${board2.id}`, { waitUntil: 'networkidle0' });
-  await page.waitForSelector(`[data-testid="col-done"] [data-testid="task-card"][data-num="${nextNum}"]`, { visible: true });
+  await page.waitForSelector(`[data-testid="task-row"][data-status="done"][data-num="${nextNum}"]`, { visible: true });
   await shot('second-card-done');
 
   // 主题切换（暗 → 亮）

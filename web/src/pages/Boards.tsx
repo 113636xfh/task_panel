@@ -1,29 +1,29 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, X } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Plus } from 'lucide-react';
 import { api } from '../lib/api';
 import { onEvent } from '../lib/ws';
-import { fmtDate } from '../lib/fmt';
 import { toast } from '../lib/toast';
 import { useI18n } from '../i18n';
-import type { Board } from '../lib/types';
+import PhaseTable from '../components/PhaseTable';
+import type { Task } from '../lib/types';
 
+// P3：看板页 = 首页 = 跨项目总表（四阶段列；按项目分组）
 export default function Boards() {
   const { t } = useI18n();
-  const [boards, setBoards] = useState<Board[] | null>(null);
+  const [tasks, setTasks] = useState<Task[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
-  const nav = useNavigate();
   const [sp, setSp] = useSearchParams();
 
-  const load = () => api.boards().then(setBoards).catch(() => {});
+  const load = () => api.tasksAll().then(setTasks).catch(() => {});
   useEffect(() => {
     load();
     return onEvent((ev) => {
-      if (ev.kind === 'boards.changed') load();
+      if (['task.status', 'task.created', 'boards.changed', 'task.event', 'task.deleted'].includes(ev.kind)) load();
     });
   }, []);
-  // 命令面板 ?new=1：自动展开新建行
+  // 命令面板 ?new=1：自动展开新建看板行
   useEffect(() => {
     if (sp.get('new') === '1') {
       setCreating(true);
@@ -46,22 +46,12 @@ export default function Boards() {
     }
   }
 
-  async function del(b: Board) {
-    if (!confirm(t('boards.delConfirm', { name: b.name }))) return;
-    try {
-      await api.deleteBoard(b.id);
-      toast(t('boards.deleted'));
-    } catch (e: any) {
-      toast(e.message, 'err');
-    }
-  }
-
   return (
     <>
       <div className="page-head">
         <h1>{t('boards.title')}</h1>
         <span className="sub">
-          {boards ? t('boards.count', { n: boards.length, s: boards.length === 1 ? '' : 's' }) : '…'}
+          {tasks ? `${tasks.length} ${t('boards.card.tasks')}` : '…'}
         </span>
         <span style={{ flex: 1 }} />
         {creating ? (
@@ -84,51 +74,22 @@ export default function Boards() {
             </button>
           </>
         ) : (
-          <button className="btn primary" data-testid="btn-new-board" onClick={() => setCreating(true)}>
-            <Plus size={14} /> {t('boards.newBtn')}
+          <button className="btn ghost" data-testid="btn-new-board" onClick={() => setCreating(true)}>
+            <Plus size={13} /> {t('boards.newBtn')}
           </button>
         )}
       </div>
 
-      {!boards ? (
+      {!tasks ? (
         <div className="empty">{t('loading')}…</div>
-      ) : boards.length === 0 ? (
+      ) : tasks.length === 0 ? (
         <div className="empty">
-          {t('boards.empty')}
+          {t('tbl.empty')}
           <br />
           {t('boards.note')}
         </div>
       ) : (
-        <div className="board-grid">
-          {boards.map((b) => (
-            <div key={b.id} className="board-card" data-testid="board-card" onClick={() => nav(`/boards/${b.id}`)}>
-              <button
-                className="bc-del"
-                title={t('boards.delete')}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  del(b);
-                }}
-              >
-                <X size={13} />
-              </button>
-              <div className="bc-name">{b.name}</div>
-              <div className="bc-stats">
-                <span>
-                  <b>{b.total}</b> {t('boards.card.tasks')}
-                </span>
-                <span>
-                  <b>{b.active}</b> {t('boards.card.running')}
-                </span>
-                <span>
-                  <b>{b.done}</b> {t('boards.card.done')}
-                </span>
-                <span style={{ marginLeft: 'auto' }}>{fmtDate(b.created_at)}</span>
-              </div>
-              <div className="bc-last">{b.last ? t('boards.last', { title: b.last.title }) : t('boards.last.none')}</div>
-            </div>
-          ))}
-        </div>
+        <PhaseTable tasks={tasks} showBoard dataTestid="ptable-home" />
       )}
     </>
   );

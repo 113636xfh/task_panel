@@ -1,5 +1,5 @@
 export type TaskStatus =
-  | 'queued' | 'planning' | 'waiting_input' | 'executing' | 'blocked'
+  | 'ready' | 'queued' | 'planning' | 'waiting_input' | 'executing' | 'blocked'
   | 'testing' | 'awaiting_confirm' | 'interrupted' | 'done' | 'failed' | 'cancelled';
 
 export interface Board {
@@ -21,7 +21,8 @@ export interface Task {
   priority: number; status: TaskStatus; created_at: number; started_at: number | null; finished_at: number | null;
   workspace_path: string; branch_mode: 'manual' | 'auto'; branch_timeout_min: number;
   acceptance_text: string; test_cmd: string; extra_prompt: string; retry_count: number;
-  current_action: string;
+  current_action: string; context_window?: number;
+  board_name?: string; subagent?: { label: string; at: number; id: string | null } | null;
   plan: Plan | null; answers: Record<string, string>; review: Review | null;
 }
 

@@ -744,3 +744,201 @@ input[type='range'] { accent-color: var(--accent); width: 110px; }
   color: var(--accent); font: inherit; font-family: var(--font-mono);
 }
 .a-name-link:hover { text-decoration: underline; }
+
+/* ============ P3：四阶段总表（看板=首页=跨项目总表） ============ */
+.ptable {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg);
+  overflow: hidden;
+}
+.pthead,
+.prow {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.6fr) repeat(4, minmax(120px, 1fr));
+  align-items: center;
+}
+.pthead {
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--line);
+  padding: 8px 14px;
+}
+.pthead .ph {
+  font-size: 10.8px;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  font-weight: 600;
+}
+.prow {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  min-height: 40px;
+}
+.prow:hover { background: var(--bg-hover); }
+.prow:last-child { border-bottom: none; }
+/* 项目分组：组间大行距、组内小行距 */
+.pgroup { margin-top: 16px; }
+.pgroup:first-of-type { margin-top: 0; }
+.pgroup-h {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 0 14px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.pgroup-h .cnt { color: var(--text-3); font-weight: 400; font-size: 11.3px; }
+.ph { padding: 0 10px; min-width: 0; display: flex; align-items: center; gap: 6px; }
+.ph-t { min-width: 0; }
+.prow .t-title {
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 34ch;
+}
+.prow .t-meta {
+  color: var(--text-3);
+  font-size: 11.3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 终态着色 */
+.prow.st-done .t-title { color: var(--st-done); }
+.prow.st-failed .t-title { color: var(--st-failed); }
+.prow.st-cancelled .t-title { color: var(--st-cancelled); }
+.prow.st-cancelled, .prow.st-failed { opacity: 0.85; }
+/* 单元格：已完成 / 未来 / 状态 pill */
+.cell-done { color: var(--text-3); display: inline-flex; }
+.cell-future { color: var(--line-strong); font-size: 14px; }
+.pill {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 12px;
+  padding: 2.5px 10px;
+  border-radius: 999px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: var(--bg-panel-2);
+  color: var(--text-2);
+}
+.pill .btn.mini { padding: 0 8px; height: 20px; font-size: 11.3px; border-radius: 999px; }
+.pill.s-ready          { color: var(--st-ready);       background: var(--st-ready-bg); }
+.pill.s-queued         { color: var(--st-queued);      background: var(--st-queued-bg); }
+.pill.s-planning       { color: var(--st-planning);    background: var(--st-planning-bg); }
+.pill.s-waiting_input  { color: var(--st-waiting);     background: var(--st-waiting-bg); }
+.pill.s-executing      { color: var(--st-executing);   background: var(--st-executing-bg); }
+.pill.s-blocked        { color: var(--st-blocked);     background: var(--st-blocked-bg); }
+.pill.s-interrupted    { color: var(--st-interrupted); background: var(--st-interrupted-bg); }
+.pill.s-testing        { color: var(--st-testing);     background: var(--st-testing-bg); }
+.pill.s-awaiting_confirm { color: var(--st-confirm);   background: var(--st-confirm-bg); }
+.pill.s-done           { color: var(--st-done);        background: var(--st-done-bg); }
+.pill.s-failed         { color: var(--st-failed);      background: var(--st-failed-bg); }
+.pill.s-cancelled      { color: var(--st-cancelled);   background: var(--st-cancelled-bg); }
+.ph .line {
+  font-size: 11.3px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+/* sub agent 小行：主会话下独立一行，执行列内进度条扫动 */
+.prow.sub {
+  cursor: pointer;
+  background: var(--bg-panel);
+  opacity: 0.95;
+}
+.prow.sub .ph-t {
+  font-size: 11.5px;
+  color: var(--text-2);
+  gap: 7px;
+}
+.sub-ico { display: inline-flex; color: var(--st-executing); }
+.sub-bar {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-panel-2);
+  overflow: hidden;
+}
+.sub-bar i {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: subsweep 2.2s linear infinite;
+}
+@keyframes subsweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+/* 侧栏：看板列表 + 历史任务 */
+.sb-section { margin: 14px 10px 0; }
+.sb-sec-h {
+  display: flex;
+  align-items: center;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  font-weight: 600;
+  padding: 0 8px 6px;
+}
+.sb-sec-h .btn { margin-left: auto; }
+.sb-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  font-size: 12.8px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.sb-item:hover { background: var(--bg-hover); color: var(--text); }
+.sb-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+.sb-item .x {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+  display: none;
+}
+.sb-item:hover .x { display: inline-flex; }
+.sb-item .x:hover { color: var(--st-failed); }
+.sb-new {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px 0;
+}
+.sb-new .inp { flex: 1; height: 28px; font-size: 12.3px; }
+/* 历史任务页 */
+.hist-filters { display: flex; gap: 8px; margin-bottom: 12px; }
+.hrow {
+  display: grid;
+  grid-template-columns: 44px minmax(200px, 1fr) 180px 130px 110px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  font-size: 12.8px;
+}
+.hrow:hover { background: var(--bg-hover); }
+.hhead {
+  color: var(--text-3);
+  font-size: 10.8px;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  cursor: default;
+}
+.hhead:hover { background: none; }
+.hrow .t2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

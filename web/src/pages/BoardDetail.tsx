@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Plus, X, RefreshCw, ImagePlus } from 'lucide-react';
+import { ArrowLeft, Plus, X, ImagePlus } from 'lucide-react';
 import { api } from '../lib/api';
 import { onEvent } from '../lib/ws';
-import { fmtDur, fmtTime, shortPath } from '../lib/fmt';
 import { toast } from '../lib/toast';
 import { useI18n } from '../i18n';
 import { fileToBase64 } from '../lib/img';
+import PhaseTable from '../components/PhaseTable';
 import type { Task } from '../lib/types';
 
 const IMG_MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', bmp: 'image/bmp' };
@@ -14,45 +14,6 @@ const IMG_MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', 
 function dataUrl(name: string, data: string): string {
   const ext = (name.slice(name.lastIndexOf('.') + 1) || 'png').toLowerCase();
   return `data:${IMG_MIME[ext] ?? 'image/png'};base64,${data}`;
-}
-
-const COLS: { key: string; color: string; statuses: string[] }[] = [
-  { key: 'queued', color: 'var(--st-queued)', statuses: ['queued', 'interrupted'] },
-  { key: 'planning', color: 'var(--st-planning)', statuses: ['planning'] },
-  { key: 'waiting_input', color: 'var(--st-waiting)', statuses: ['waiting_input'] },
-  { key: 'executing', color: 'var(--st-executing)', statuses: ['executing'] },
-  { key: 'blocked', color: 'var(--st-blocked)', statuses: ['blocked'] },
-  { key: 'testing', color: 'var(--st-testing)', statuses: ['testing'] },
-  { key: 'awaiting_confirm', color: 'var(--st-confirm)', statuses: ['awaiting_confirm'] },
-  { key: 'done', color: 'var(--st-done)', statuses: ['done'] },
-];
-
-function TaskCard({ t, onOpen }: { t: Task; onOpen: () => void }) {
-  const { t: tx } = useI18n();
-  const running = ['planning', 'executing', 'testing'].includes(t.status);
-  return (
-    <div className={`tcard st-${t.status}`} data-testid="task-card" data-num={t.num} data-status={t.status} onClick={onOpen}>
-      <div className="tc-top">
-        <span className="tc-num">#{t.num}</span>
-        {t.status === 'interrupted' && (
-          <span className="tc-interrupted" title={tx('status.interrupted')}>
-            <RefreshCw size={12} />
-          </span>
-        )}
-        <span className={`prio p${t.priority}`}>P{t.priority}</span>
-      </div>
-      <div className="tc-title">{t.title}</div>
-      {t.current_action && running && <div className="tc-action">{t.current_action}</div>}
-      <div className="tc-meta">
-        <span>{shortPath(t.workspace_path)}</span>
-        <span>·</span>
-        <span>{running && t.started_at ? fmtDur(Date.now() - t.started_at) : fmtTime(t.created_at)}</span>
-        {t.status === 'waiting_input' && <span className="tc-chip chip-wait">{tx('chip.waiting')}</span>}
-        {t.status === 'blocked' && <span className="tc-chip chip-block">{tx('chip.blocked')}</span>}
-        {t.status === 'awaiting_confirm' && <span className="tc-chip chip-confirm">{tx('chip.awaiting')}</span>}
-      </div>
-    </div>
-  );
 }
 
 function NewTaskModal({
@@ -288,15 +249,15 @@ function NewTaskModal({
           <button className="btn" onClick={onClose}>
             {t('boards.cancel')}
           </button>
-          <button className="btn primary" data-testid="btn-create-task" disabled={busy} onClick={submit}>
-            {busy ? t('modal.creating') : t('modal.submit')}
-          </button>
+
+            <button className="btn primary" data-testid="btn-create-task" disabled={busy} onClick={submit}>
+              {busy ? t('loading') : t('modal.create')}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
   );
 }
-
 export default function BoardDetail() {
   const { id = '' } = useParams();
   const nav = useNavigate();
@@ -331,27 +292,12 @@ export default function BoardDetail() {
     }).catch(() => {});
     const off = onEvent((ev) => {
       if (!['task.status', 'task.created', 'boards.changed', 'task.event'].includes(ev.kind)) return;
-      if (ev.kind === 'task.event' && !tasks.some((t) => t.id === ev.payload?.taskId)) return;
+      if (ev.kind === 'task.event' && !tasks.some((x) => x.id === ev.payload?.taskId)) return;
       loadTasks();
     });
     return off;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
-
-  const byCol = useMemo(() => {
-    const m: Record<string, Task[]> = {};
-    for (const c of COLS) m[c.key] = [];
-    const dead: Task[] = [];
-    for (const t of tasks) {
-      if (t.status === 'failed' || t.status === 'cancelled') dead.push(t);
-      else {
-        const c = COLS.find((c) => c.statuses.includes(t.status));
-        c?.statuses.includes(t.status) && m[c.key].push(t);
-      }
-    }
-    for (const c of COLS) m[c.key].sort((a, b) => a.priority - b.priority || a.num - b.num);
-    return { cols: m, dead };
-  }, [tasks]);
 
   return (
     <>
@@ -369,29 +315,10 @@ export default function BoardDetail() {
         </button>
       </div>
 
-      <div className="kanban">
-        {COLS.map((c) => (
-          <div key={c.key} className={`kcol ${c.key}`} data-testid={`col-${c.key}`}>
-            <div className="kcol-h">
-              <span className="cdot" style={{ background: c.color }} />
-              {t(`col.${c.key}`)}
-              <span className="cnt">{byCol.cols[c.key].length}</span>
-            </div>
-            {byCol.cols[c.key].map((t) => (
-              <TaskCard key={t.id} t={t} onOpen={() => nav(`/boards/${id}/tasks/${t.id}`)} />
-            ))}
-          </div>
-        ))}
-      </div>
-
-      {byCol.dead.length > 0 && (
-        <div className="dead-row">
-          {byCol.dead.map((tt) => (
-            <span key={tt.id} className="dead-chip" onClick={() => nav(`/boards/${id}/tasks/${tt.id}`)}>
-              #{tt.num} {tt.title} · {t(`status.${tt.status}`)}
-            </span>
-          ))}
-        </div>
+      {tasks.length === 0 ? (
+        <div className="empty">{t('tbl.empty')}</div>
+      ) : (
+        <PhaseTable tasks={tasks} dataTestid="ptable-board" />
       )}
 
       {showNew && <NewTaskModal boardId={id} skills={skills} onClose={() => setShowNew(false)} onCreated={loadTasks} />}

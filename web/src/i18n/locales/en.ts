@@ -32,6 +32,7 @@ export const en: Record<string, string> = {
   'runtime.blocked': 'blocked',
   'runtime.awaiting': 'awaiting',
 
+  'status.ready': 'Ready',
   'status.queued': 'Queued',
   'status.planning': 'Planning',
   'status.waiting_input': 'Needs your answer',

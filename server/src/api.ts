@@ -71,7 +71,28 @@ function taskFromRow(t: TaskRow) {
     plan: t.plan_json ? JSON.parse(t.plan_json) : null,
     answers: t.answers_json ? JSON.parse(t.answers_json) : {},
     review: t.review_json ? JSON.parse(t.review_json) : null,
+    // P3：本轮执行中派生的 sub agent（供看板小行展示；无则 null）
+    subagent: latestSubagent(t.id, t.started_at ?? 0) ?? null,
   };
+}
+
+// 当前运行轮次（started_at 之后）最近一次 subagent 事件 → {label, at, id}
+function latestSubagent(taskId: string, since: number): { label: string; at: number; id: string | null } | null {
+  try {
+    const r = db.prepare(
+      "SELECT payload, ts FROM task_events WHERE task_id=? AND kind='subagent' AND ts>=? ORDER BY id DESC LIMIT 1"
+    ).get(taskId, since) as { payload: string; ts: number } | undefined;
+    if (!r) return null;
+    const p = JSON.parse(r.payload) as { id?: string; args?: Record<string, unknown> };
+    const label =
+      (typeof p.args?.agent === 'string' && p.args.agent) ||
+      (typeof p.args?.name === 'string' && p.args.name) ||
+      (typeof p.args?.label === 'string' && p.args.label) ||
+      'subagent';
+    return { label: String(label), at: r.ts, id: p.id ?? null };
+  } catch {
+    return null;
+  }
 }
 
 function taskFull(id: string) {
@@ -128,6 +149,14 @@ api.delete('/boards/:id', (req, res) => {
 });
 
 // ---------------- tasks ----------------
+// P3：跨项目全量任务（首页总表用；含 board_name）
+api.get('/tasks/all', (_req, res) => {
+  const rows = db.prepare(
+    'SELECT t.*, b.name AS board_name FROM tasks t JOIN boards b ON b.id = t.board_id ORDER BY b.name, t.created_at'
+  ).all() as unknown as TaskRow[];
+  res.json(rows.map(taskFromRow));
+});
+
 api.get('/boards/:id/tasks', (req, res) => {
   const rows = db.prepare('SELECT * FROM tasks WHERE board_id=? ORDER BY created_at').all(req.params.id) as unknown as TaskRow[];
   res.json(rows.map(taskFromRow));

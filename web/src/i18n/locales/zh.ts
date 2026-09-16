@@ -6,6 +6,7 @@ export const zh: Record<string, string> = {
   'ws.off': '事件流断开，重连中',
 
   'nav.boards': '看板',
+    'nav.history': '历史任务',
   'nav.skills': '技能',
   'nav.settings': '设置',
 
@@ -33,6 +34,7 @@ export const zh: Record<string, string> = {
   'runtime.awaiting': '待确认',
 
   // 状态（徽章 + 看板列共用；看板列用 col.* 以便更短）
+  'status.ready': '就绪',
   'status.queued': '排队中',
   'status.planning': '打磨中',
   'status.waiting_input': '待你回答',
@@ -44,6 +46,21 @@ export const zh: Record<string, string> = {
   'status.failed': '失败',
   'status.interrupted': '被抢占',
   'status.cancelled': '已取消',
+    'phase.wait': '等待',
+    'phase.plan': '打磨',
+    'phase.exec': '执行',
+    'phase.test': '验收',
+    'tbl.start': '启动',
+    'tbl.confirm': '确认完成',
+    'tbl.empty': '还没有任务',
+    'sb.boards': '看板',
+    'hist.title': '历史任务',
+    'hist.all': '全部',
+    'hist.empty': '暂无已结束的任务',
+    'hist.col.title': '任务',
+    'hist.col.project': '项目',
+    'hist.col.status': '状态',
+    'hist.col.time': '完成时间',
 
   'col.queued': '排队',
   'col.planning': '打磨',

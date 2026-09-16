@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { SquareKanban, Wrench, Settings2, Moon, Sun, Globe, Type } from 'lucide-react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { SquareKanban, Wrench, Settings2, Moon, Sun, Globe, Type, History as HistIcon, Plus, X, FolderKanban } from 'lucide-react';
 import { onEvent, wsState } from '../lib/ws';
 import { api } from '../lib/api';
-import type { Runtime } from '../lib/types';
+import { toast } from '../lib/toast';
+import type { Board, Runtime } from '../lib/types';
 import { useI18n } from '../i18n';
 import CommandPalette from './CommandPalette';
 
@@ -12,6 +13,7 @@ const TITLES: [RegExp, string][] = [
   [/^\/boards\/.+/, 'nav.boards'],
   [/^\/skills/, 'nav.skills'],
   [/^\/settings/, 'nav.settings'],
+  [/^\/history/, 'nav.history'],
   [/^\/boards/, 'nav.boards'],
 ];
 
@@ -41,9 +43,44 @@ function Toasts() {
 export default function Layout() {
   const { locale, setLocale, t } = useI18n();
   const loc = useLocation();
+  const nav = useNavigate();
   const [rt, setRt] = useState<Runtime | null>(null);
   const [online, setOnline] = useState(wsState.online);
   const [theme, setTheme] = useState(localStorage.getItem('tp-theme') ?? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
+  const [boards, setBoards] = useState<Board[]>([]);
+  const [newBoard, setNewBoard] = useState('');
+  const [showSbBoard, setShowSbBoard] = useState(false);
+
+  const loadBoards = () => api.boards().then(setBoards).catch(() => {});
+  useEffect(() => {
+    loadBoards();
+    return onEvent((ev) => {
+      if (ev.kind === 'boards.changed') loadBoards();
+    });
+  }, []);
+
+  async function createBoard() {
+    const n = newBoard.trim();
+    if (!n) return;
+    try {
+      await api.createBoard(n);
+      setNewBoard('');
+      setShowSbBoard(false);
+      toast(t('boards.created'));
+    } catch (e: any) {
+      toast(e.message, 'err');
+    }
+  }
+
+  async function deleteBoard(b: Board) {
+    if (!confirm(t('boards.delConfirm', { name: b.name }))) return;
+    try {
+      await api.deleteBoard(b.id);
+      toast(t('boards.deleted'));
+    } catch (e: any) {
+      toast(e.message, 'err');
+    }
+  }
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -96,6 +133,71 @@ export default function Layout() {
             <SquareKanban size={15} />
           </span>{' '}
           {t('nav.boards')}
+        </NavLink>
+
+        {/* P3：看板列表（侧栏） */}
+        <div className="sb-section" data-testid="sb-boards">
+          <div className="sb-sec-h">
+            <FolderKanban size={12} /> {t('sb.boards')}
+            <button
+              className="btn ghost mini"
+              data-testid="btn-sb-newboard"
+              onClick={() => {
+                setNewBoard('');
+                setShowSbBoard(true);
+                setTimeout(() => document.querySelector<HTMLInputElement>('[data-testid=input-sb-board]')?.focus());
+              }}
+            >
+              <Plus size={12} />
+            </button>
+          </div>
+          {boards.map((b) => (
+            <div
+              key={b.id}
+              className={`sb-item ${loc.pathname === `/boards/${b.id}` ? 'active' : ''}`}
+              data-testid={`sb-board-${b.id.slice(2)}`}
+              onClick={() => nav(`/boards/${b.id}`)}
+            >
+              <span className="t2">{b.name}</span>
+              <span style={{ color: 'var(--text-3)', fontSize: 11 }}>{b.total}</span>
+              <button
+                className="x"
+                title={t('boards.delete')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deleteBoard(b);
+                }}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+          {showSbBoard && (
+            <div className="sb-new">
+              <input
+                className="inp"
+                data-testid="input-sb-board"
+                placeholder={t('boards.newPh')}
+                autoFocus
+                value={newBoard}
+                onChange={(e) => setNewBoard(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') createBoard();
+                  if (e.key === 'Escape') setShowSbBoard(false);
+                }}
+              />
+              <button className="btn primary mini" data-testid="btn-sb-createboard" onClick={createBoard}>
+                {t('boards.create')}
+              </button>
+            </div>
+          )}
+        </div>
+
+        <NavLink to="/history" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+          <span className="ico">
+            <HistIcon size={15} />
+          </span>{' '}
+          {t('nav.history')}
         </NavLink>
         <NavLink to="/skills" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
           <span className="ico">

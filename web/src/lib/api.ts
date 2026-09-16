@@ -10,6 +10,7 @@ export const api = {
   deleteBoard: (id: string) => req(`/api/boards/${id}`, { method: 'DELETE' }),
 
   tasks: (boardId: string) => req<any[]>(`/api/boards/${boardId}/tasks`),
+  tasksAll: () => req<any[]>('/api/tasks/all'),
   task: (id: string) => req<any>(`/api/tasks/${id}`),
   createTask: (boardId: string, body: any) => req(`/api/boards/${boardId}/tasks`, { method: 'POST', body: JSON.stringify(body) }),
   patchTask: (id: string, body: any) => req(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
@@ -19,6 +20,9 @@ export const api = {
   answer: (id: string, answers: Record<string, string>) => req(`/api/tasks/${id}/answer`, { method: 'POST', body: JSON.stringify({ answers }) }),
   blockAnswer: (id: string, answer: string) => req(`/api/tasks/${id}/block-answer`, { method: 'POST', body: JSON.stringify({ answer }) }),
   confirm: (id: string) => req(`/api/tasks/${id}/confirm`, { method: 'POST' }),
+  start: (id: string) => req(`/api/tasks/${id}/start`, { method: 'POST' }),
+  rework: (id: string, body: { text: string; images?: { name: string; data: string }[] }) =>
+    req(`/api/tasks/${id}/rework`, { method: 'POST', body: JSON.stringify(body) }),
   cancel: (id: string) => req(`/api/tasks/${id}/cancel`, { method: 'POST' }),
   message: (id: string, text: string, images?: number[]) => req(`/api/tasks/${id}/message`, { method: 'POST', body: JSON.stringify({ text, images }) }),
   // task images（长提示词附图）
