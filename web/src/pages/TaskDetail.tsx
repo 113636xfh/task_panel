@@ -22,6 +22,8 @@ import {
   Bot,
   Download,
   ListFilter,
+  RotateCcw,
+  ChevronDown,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { onEvent } from '../lib/ws';
@@ -33,6 +35,149 @@ import { fileToBase64 } from '../lib/img';
 import { useI18n } from '../i18n';
 import type { BlockItem, Plan, Task, TaskEvent } from '../lib/types';
 
+// 可折叠长文本（full 模式的 system prompt / 工具输出）
+function Collapsible({ text, defaultOpen = false, openLabel, closeLabel }: { text: string; defaultOpen?: boolean; openLabel: string; closeLabel: string }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const long = text.length > 600;
+  if (!long && !open) {
+    return <pre className="m-pre">{text}</pre>;
+  }
+  return (
+    <>
+      <pre className="m-pre" style={open || !long ? undefined : { maxHeight: 160, overflow: 'hidden' }}>
+        {open || !long ? text : text}
+      </pre>
+      <button className="btn ghost mini m-toggle" data-testid="msg-toggle" onClick={() => setOpen(!open)}>
+        <ChevronDown size={12} style={{ transform: open ? 'rotate(180deg)' : '' }} /> {open ? closeLabel : openLabel}
+      </button>
+    </>
+  );
+}
+
+// full 模式：完整推理消息框（不同角色不同 box + 小标签）
+function MsgBox({ ev, imgBase }: { ev: TaskEvent; imgBase?: string }) {
+  const { t } = useI18n();
+  const p: any = ev.payload;
+  const time = <span className="ev-t">{fmtTime(ev.ts)}</span>;
+
+  if (ev.kind === 'system_prompt') {
+    return (
+      <div className="mbox mbox-sys" data-mkind="system_prompt">
+        <div className="mbox-h">
+          <span className="mbox-label">{t('msg.system')}</span>
+          {time}
+        </div>
+        <div className="mbox-b">
+          <Collapsible text={p.text} openLabel={t('msg.expand')} closeLabel={t('msg.collapse')} />
+        </div>
+      </div>
+    );
+  }
+  if (ev.kind === 'subagent') {
+    const label =
+      (typeof p.args?.agent === 'string' && p.args.agent) ||
+      (typeof p.args?.name === 'string' && p.args.name) ||
+      (typeof p.args?.label === 'string' && p.args.label) ||
+      'subagent';
+    let argStr = '';
+    try {
+      argStr = JSON.stringify(p.args, null, 2) ?? '';
+    } catch {
+      argStr = String(p.args);
+    }
+    return (
+      <div className="mbox mbox-sub" data-mkind="subagent">
+        <div className="mbox-h">
+          <Bot size={12} className="mbox-ico" />
+          <span className="mbox-label">
+            {t('msg.subagent')} · {label}
+          </span>
+          {time}
+        </div>
+        <div className="mbox-b">
+          <Collapsible text={argStr.slice(0, 4000)} openLabel={t('msg.expand')} closeLabel={t('msg.collapse')} />
+        </div>
+      </div>
+    );
+  }
+  if (ev.kind !== 'message') return null;
+
+  // user：注入 prompt（虚线框+标签） / 普通留言（实线强调框）
+  if (p.role === 'user') {
+    const injected = p.injected && p.injected !== 'user';
+    return (
+      <div className={`mbox ${injected ? 'mbox-inject' : 'mbox-user'}`} data-mkind={injected ? 'inject' : 'user'}>
+        <div className="mbox-h">
+          <span className="mbox-label">
+            {injected ? `${t('msg.inject')} · ${p.injected}` : t('msg.user')}
+          </span>
+          {time}
+        </div>
+        <div className="mbox-b">
+          {(p.parts ?? []).map((c: any, i: number) =>
+            c.type === 'text' ? (
+              <div key={i} className="m-text">
+                <MD text={c.text} imgBase={imgBase} />
+              </div>
+            ) : null
+          )}
+        </div>
+      </div>
+    );
+  }
+  // toolResult：代码框
+  if (p.role === 'toolResult') {
+    const text = (p.parts ?? [])
+      .filter((c: any) => c.type === 'text')
+      .map((c: any) => c.text)
+      .join('\n');
+    return (
+      <div className={`mbox mbox-toolres ${p.isError ? 'err' : ''}`} data-mkind="tool">
+        <div className="mbox-h">
+          <Terminal size={12} className="mbox-ico" />
+          <span className="mbox-label">
+            {t('msg.toolres')}
+            {p.toolName ? ` · ${p.toolName}` : ''}
+            {p.isError ? ` · ${t('msg.err')}` : ''}
+          </span>
+          {time}
+        </div>
+        <div className="mbox-b">
+          <Collapsible text={text || '—'} openLabel={t('msg.expand')} closeLabel={t('msg.collapse')} />
+        </div>
+      </div>
+    );
+  }
+  // assistant：文本气泡 / 思考（灰斜体）/ 工具调用（代码框）
+  return (
+    <div className="mbox mbox-ast" data-mkind="assistant">
+      {(p.parts ?? []).map((c: any, i: number) => {
+        if (c.type === 'text')
+          return (
+            <div key={i} className="m-bubble">
+              <MD text={c.text} imgBase={imgBase} />
+            </div>
+          );
+        if (c.type === 'thinking') return <div key={i} className="m-think">▸ {c.text}</div>;
+        if (c.type === 'toolCall')
+          return (
+            <div key={i} className="m-toolcall">
+              <div className="mbox-h">
+                <Terminal size={12} className="mbox-ico" />
+                <span className="mbox-label">
+                  {t('msg.toolcall')} · {c.name}
+                </span>
+              </div>
+              <pre className="m-pre">{c.args}</pre>
+            </div>
+          );
+        return null;
+      })}
+    </div>
+  );
+}
+
+// summary 模式：轻量事件行（沿用 P2 视觉）
 function EvRow({ ev, plan, imgBase, onPreview }: { ev: TaskEvent; plan: Plan | null; imgBase?: string; onPreview?: (f: { name: string; path: string }) => void }) {
   const { t } = useI18n();
   const p = ev.payload;
@@ -151,9 +296,66 @@ function EvRow({ ev, plan, imgBase, onPreview }: { ev: TaskEvent; plan: Plan | n
           </span>
         </div>
       );
+    case 'subagent': {
+      const label =
+        (typeof p.args?.agent === 'string' && p.args.agent) ||
+        (typeof p.args?.name === 'string' && p.args.name) ||
+        'subagent';
+      return (
+        <div className="ev ev-sub">
+          {time}
+          <Bot size={13} className="ev-ico" />
+          <span className="ev-body">
+            {t('msg.subagent')} · {label}
+          </span>
+        </div>
+      );
+    }
     default:
       return null;
   }
+}
+
+// 返工框（done / awaiting_confirm 时可用；文本打回，复用任务会话）
+function ReworkBox({ taskId, onDone }: { taskId: string; onDone: () => void }) {
+  const { t } = useI18n();
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!text.trim() || busy) return;
+    setBusy(true);
+    try {
+      await api.rework(taskId, { text: text.trim() });
+      onDone();
+      toast(t('rework.sent'));
+    } catch (e: any) {
+      toast(e.message, 'err');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="alert-card alert-confirm" data-testid="rework-box">
+      <div className="ac-title">
+        <RotateCcw size={14} /> {t('rework.title')}
+      </div>
+      <textarea
+        className="inp"
+        data-testid="input-rework"
+        rows={4}
+        placeholder={t('rework.ph')}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+        <button className="btn primary" data-testid="btn-rework-submit" disabled={busy || !text.trim()} onClick={submit}>
+          {busy ? t('loading') : t('rework.submit')}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function TaskDetail() {
@@ -166,6 +368,10 @@ export default function TaskDetail() {
   const [blocks, setBlocks] = useState<BlockItem[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
   const [feedFilter, setFeedFilter] = useState('all');
+  const [mode, setMode] = useState<'summary' | 'full'>('summary');
+  const [tab, setTab] = useState<'plan' | 'accept' | 'outputs'>('outputs');
+  const [descOpen, setDescOpen] = useState(false);
+  const [reworkOpen, setReworkOpen] = useState(false);
   const [msg, setMsg] = useState('');
   const [longMode, setLongMode] = useState(false);
   const [draftImgs, setDraftImgs] = useState<{ num: number; name: string; path: string }[]>([]);
@@ -184,8 +390,6 @@ export default function TaskDetail() {
       .events(id, since)
       .then((rows) => {
         if (!rows.length) return;
-        // 先在当前时刻算出新增行，再推进 lastSeq（函数式更新器在渲染时才执行，
-        // 若把 filter 放在更新器内，会读到已被推进的 lastSeq 从而把整批新行全部过滤掉）
         const fresh = since === 0 ? rows : rows.filter((r) => r.seq > lastSeq.current);
         if (fresh.length) setEvents((x) => (since === 0 ? rows : [...x, ...fresh]));
         lastSeq.current = Math.max(lastSeq.current, ...rows.map((r) => r.seq));
@@ -204,7 +408,6 @@ export default function TaskDetail() {
       const p = ev.payload ?? {};
       if (p.taskId && p.taskId !== id) return;
       if (ev.kind === 'task.event') {
-        // 直接消费 WS 携带的事件（带 seq 去重），避免每条消息一次 HTTP 拉取
         const e = ev.payload.event;
         if (e && e.seq > lastSeq.current) {
           lastSeq.current = e.seq;
@@ -222,23 +425,31 @@ export default function TaskDetail() {
   useEffect(() => {
     const el = feedRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [events.length]);
+  }, [events.length, mode, feedFilter]);
 
   const openBlock = useMemo(() => blocks.find((b) => b.status === 'open') ?? null, [blocks]);
 
-  // feed 筛选（按 kind 分组）
-  const FEED_GROUPS: Record<string, string[]> = {
-    user: ['user_message'],
-    exec: ['planned', 'step', 'tool', 'asset'],
-    review: ['review', 'block'],
-    system: ['system', 'phase'],
-  };
-  const shownEvents = useMemo(
-    () => (feedFilter === 'all' ? events : events.filter((e) => FEED_GROUPS[feedFilter]?.includes(e.kind))),
-    [events, feedFilter]
-  );
+  // 事件筛选（summary/full 通用；full 下按 message 角色归类）
+  const shownEvents = useMemo(() => {
+    if (feedFilter === 'all') return events;
+    return events.filter((e) => {
+      const p: any = e.payload;
+      if (mode === 'full' && e.kind === 'message') {
+        if (feedFilter === 'user') return p.role === 'user';
+        if (feedFilter === 'exec') return p.role !== 'user';
+        if (feedFilter === 'review') return false;
+        if (feedFilter === 'system') return false;
+      }
+      const groups: Record<string, string[]> = {
+        user: ['user_message'],
+        exec: ['planned', 'step', 'tool', 'asset', 'subagent'],
+        review: ['review', 'block'],
+        system: ['system', 'phase', 'system_prompt'],
+      };
+      return groups[feedFilter]?.includes(e.kind) ?? false;
+    });
+  }, [events, feedFilter, mode]);
 
-  // 导出全部事件为 JSON（客户端下载）
   async function exportEvents() {
     try {
       const rows = await api.events(id, 0);
@@ -285,6 +496,8 @@ export default function TaskDetail() {
   const running = ['planning', 'executing', 'testing'].includes(task.status);
   const branchQs = task.plan?.branch_questions ?? [];
   const pendingQs = branchQs.filter((q) => !task.answers[q.id]);
+  const actionable = ['waiting_input', 'blocked', 'awaiting_confirm', 'interrupted'].includes(task.status);
+  const canRework = task.status === 'done' || task.status === 'awaiting_confirm';
 
   async function submitBranch() {
     const answers: Record<string, string> = {};
@@ -310,419 +523,470 @@ export default function TaskDetail() {
     });
 
   return (
-    <>
-      <div className="task-head">
-        <button className="btn ghost" onClick={() => nav(`/boards/${task.board_id}`)}>
-          <ArrowLeft size={14} /> {t('board.back')}
-        </button>
-        <h1>
-          <span className="mono" style={{ color: 'var(--text-3)', fontWeight: 500 }}>
-            #{task.num}
-          </span>{' '}
-          {task.title}
-        </h1>
-        <span className={`badge st-${task.status}`} data-testid="status-badge">
-          <span className="dot" />
-          {t(`status.${task.status}`)}
-        </span>
-        <select
-          className="inp"
-          style={{ width: 78 }}
-          value={task.priority}
-          onChange={(e) => api.patchTask(id, { priority: Number(e.target.value) }).then(reloadTask).catch((e) => toast(e.message, 'err'))}
-        >
-          <option value={0}>P0</option>
-          <option value={1}>P1</option>
-          <option value={2}>P2</option>
-          <option value={3}>P3</option>
-        </select>
-        {task.status !== 'done' && (
-          <button
-            className="btn danger sm"
-            onClick={() => api.cancel(id).then(reloadTask).catch((e) => toast(e.message, 'err'))}
-          >
-            <X size={13} /> {t('task.cancel')}
+    <div className="td">
+      {/* ===== 顶部固定：任务 + 描述 ===== */}
+      <header className="td-head">
+        <div className="td-hrow">
+          <button className="btn ghost" onClick={() => nav(`/boards/${task.board_id}`)}>
+            <ArrowLeft size={14} /> {t('board.back')}
           </button>
+          <h1 className="td-title" title={task.title}>
+            <span className="mono" style={{ color: 'var(--text-3)', fontWeight: 500 }}>
+              #{task.num}
+            </span>{' '}
+            {task.title}
+          </h1>
+          <span className={`badge st-${task.status}`} data-testid="status-badge">
+            <span className="dot" />
+            {t(`status.${task.status}`)}
+          </span>
+          <select
+            className="inp"
+            style={{ width: 74 }}
+            value={task.priority}
+            onChange={(e) => api.patchTask(id, { priority: Number(e.target.value) }).then(reloadTask).catch((e) => toast(e.message, 'err'))}
+          >
+            <option value={0}>P0</option>
+            <option value={1}>P1</option>
+            <option value={2}>P2</option>
+            <option value={3}>P3</option>
+          </select>
+          <span style={{ flex: 1 }} />
+          {canRework && !reworkOpen && (
+            <button className="btn ghost sm" data-testid="btn-rework" onClick={() => setReworkOpen(true)}>
+              <RotateCcw size={13} /> {t('act.rework')}
+            </button>
+          )}
+          {task.status !== 'done' && (
+            <button
+              className="btn danger sm"
+              onClick={() => api.cancel(id).then(reloadTask).catch((e) => toast(e.message, 'err'))}
+            >
+              <X size={13} /> {t('task.cancel')}
+            </button>
+          )}
+        </div>
+        <div
+          className={`td-desc ${descOpen ? 'open' : ''}`}
+          data-testid="task-desc"
+          onClick={() => setDescOpen(!descOpen)}
+          title={descOpen ? undefined : t('task.descToggle')}
+        >
+          <MD text={task.description} imgBase={imgBase} />
+        </div>
+        <div className="td-meta">
+          <span className="meta-ico">
+            <Folder size={13} /> <code className="mono">{task.workspace_path}</code>
+          </span>
+          <span className="meta-ico">
+            <GitBranch size={13} /> {t(task.branch_mode === 'manual' ? 'meta.branch.manual' : 'meta.branch.auto', { min: task.branch_timeout_min })}
+          </span>
+          {task.test_cmd && (
+            <span className="meta-ico">
+              {t('meta.test')}：<code className="mono">{task.test_cmd}</code>
+            </span>
+          )}
+          {task.started_at && (
+            <span className="meta-ico">
+              <Clock size={13} />{' '}
+              {running ? `${t('meta.running')} ${fmtDur(Date.now() - task.started_at)}` : `${t('meta.duration')} ${fmtDur((task.finished_at ?? Date.now()) - task.started_at)}`}
+            </span>
+          )}
+        </div>
+      </header>
+
+      {/* ===== 中部：消息流（唯一滚动区） ===== */}
+      <div className="td-feed">
+        <div className="td-feedbar">
+          <ListFilter size={13} className="fb-ico" />
+          <select
+            className="inp"
+            data-testid="feed-filter"
+            style={{ width: 122, padding: '3px 8px', fontSize: 12 }}
+            value={feedFilter}
+            onChange={(e) => setFeedFilter(e.target.value)}
+          >
+            {['all', 'user', 'exec', 'review', 'system'].map((k) => (
+              <option key={k} value={k}>
+                {t(`feed.filter.${k}`)}
+              </option>
+            ))}
+          </select>
+          <button className="btn ghost sm" data-testid="feed-export" title={t('feed.export')} onClick={exportEvents}>
+            <Download size={13} />
+          </button>
+          <span className="fb-count">{t('feed.count', { n: events.length })}</span>
+          <span style={{ flex: 1 }} />
+          <button
+            className={`btn ${mode === 'full' ? 'primary' : 'ghost'} sm`}
+            data-testid="btn-mode"
+            onClick={() => setMode(mode === 'full' ? 'summary' : 'full')}
+            title={t('feed.modeTip')}
+          >
+            {mode === 'full' ? t('feed.mode.full') : t('feed.mode.summary')}
+          </button>
+        </div>
+        <div className="feed" data-testid="feed" ref={feedRef}>
+          {shownEvents.length === 0 && (
+            <div style={{ color: 'var(--text-3)', fontSize: 12.5, textAlign: 'center', padding: 18 }}>{t('feed.empty')}</div>
+          )}
+          {shownEvents.map((ev) =>
+            mode === 'full' ? (
+              <div key={ev.seq} data-testid="ev">
+                {['message', 'system_prompt', 'subagent'].includes(ev.kind) ? (
+                  <MsgBox ev={ev} imgBase={imgBase} />
+                ) : (
+                  <EvRow ev={ev} plan={task.plan} imgBase={imgBase} onPreview={setPreview} />
+                )}
+              </div>
+            ) : (
+              <div key={ev.seq} data-testid="ev">
+                <EvRow ev={ev} plan={task.plan} imgBase={imgBase} onPreview={setPreview} />
+              </div>
+            )
+          )}
+        </div>
+      </div>
+
+      {/* ===== 底部 1/4：动作区（状态卡 / 计划·验收·产物） ===== */}
+      <div className="td-actions">
+        {reworkOpen && canRework ? (
+          <ReworkBox
+            taskId={id}
+            onDone={() => {
+              setReworkOpen(false);
+              reloadTask();
+            }}
+          />
+        ) : task.status === 'blocked' && openBlock ? (
+          <div className="alert-card alert-block">
+            <div className="ac-title">
+              <OctagonAlert size={14} /> {t('block.title')}
+            </div>
+            <MD text={openBlock.question} imgBase={imgBase} />
+            <div className="ctx-box">
+              <span>
+                <span className="k">{t('block.ctx.now')}</span>
+                {openBlock.context.current}
+              </span>
+              <span>
+                <span className="k">{t('block.ctx.verified')}</span>
+                {openBlock.context.verified}
+              </span>
+              <span>
+                <span className="k">{t('block.ctx.impact')}</span>
+                {openBlock.context.impact}
+              </span>
+              <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span className="k">{t('block.ctx.refs')}</span>
+                {openBlock.context.refs.map((r) => (
+                  <span key={r} className="ref-chip">
+                    {r}
+                  </span>
+                ))}
+              </span>
+            </div>
+            <div className="opt-list">
+              {openBlock.options.map((o, i) => (
+                <button key={i} className="opt-btn" data-testid="block-opt" data-idx={i} onClick={() => submitBlock(o.label)}>
+                  <span className="o-label">
+                    {String.fromCharCode(65 + i)}. {o.label}
+                    {openBlock.recommended && String.fromCharCode(65 + i) === openBlock.recommended && (
+                      <span className="rec-tag">{t('block.recommended')}</span>
+                    )}
+                  </span>
+                  <span className="o-sub">
+                    {o.pros && <span className="pro">＋ {o.pros}</span>}{' '}
+                    {o.cons && <span className="con">－ {o.cons}</span>}{' '}
+                    {o.estimate && <span className="est">（{o.estimate}）</span>}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="row">
+              <input
+                className="inp"
+                placeholder={t('block.custom')}
+                value={blockCustom}
+                onChange={(e) => setBlockCustom(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && blockCustom.trim() && submitBlock(blockCustom.trim())}
+              />
+              <button className="btn primary" data-testid="btn-block-submit" disabled={!blockCustom.trim()} onClick={() => submitBlock(blockCustom.trim())}>
+                {t('block.submit')}
+              </button>
+            </div>
+          </div>
+        ) : task.status === 'waiting_input' ? (
+          <div className="alert-card alert-wait">
+            <div className="ac-title">
+              <Pencil size={14} /> {t('branch.title', { n: pendingQs.length })}
+            </div>
+            {pendingQs.map((q) => (
+              <div key={q.id} style={{ marginBottom: 14 }}>
+                <div style={{ fontWeight: 650, marginBottom: 7, fontSize: 13 }}>{q.q}</div>
+                <div className="opt-list">
+                  {q.options.map((o, i) => (
+                    <button
+                      key={i}
+                      className={`opt-btn ${branchSel[q.id] === o.label ? 'on' : ''}`}
+                      data-testid="branch-opt"
+                      data-q={q.id}
+                      data-idx={i}
+                      onClick={() => setBranchSel((s) => ({ ...s, [q.id]: o.label }))}
+                    >
+                      <span className="o-label">
+                        {String.fromCharCode(65 + i)}. {o.label}
+                        {o.recommended && <span className="rec-tag">{t('branch.recommended')}</span>}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <input
+                  className="inp"
+                  style={{ marginTop: 6 }}
+                  placeholder={t('branch.customPh')}
+                  value={branchCustom[q.id] ?? ''}
+                  onChange={(e) => setBranchCustom((s) => ({ ...s, [q.id]: e.target.value }))}
+                />
+              </div>
+            ))}
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn primary" data-testid="btn-branch-submit" onClick={submitBranch}>
+                {t('branch.submit')}
+              </button>
+            </div>
+          </div>
+        ) : task.status === 'awaiting_confirm' ? (
+          <div className="alert-card alert-confirm">
+            <div className="ac-title">
+              <ShieldCheck size={14} /> {t('confirm.title')}
+            </div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 11 }}>
+              {t('confirm.descA')}
+              {task.test_cmd && (
+                <>
+                  {' '}
+                  <code className="mono">{task.test_cmd}</code>
+                </>
+              )}{' '}
+              {t('confirm.descB')}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                className="btn primary big"
+                data-testid="btn-confirm-done"
+                onClick={() =>
+                  api.confirm(id).then(() => {
+                    toast(t('act.confirmed'));
+                    reloadTask();
+                  })
+                }
+              >
+                <Check size={14} /> {t('confirm.btn')}
+              </button>
+              <button className="btn ghost" data-testid="btn-rework" onClick={() => setReworkOpen(true)}>
+                <RotateCcw size={13} /> {t('confirm.rework')}
+              </button>
+            </div>
+          </div>
+        ) : task.status === 'interrupted' ? (
+          <div className="alert-card alert-wait">
+            <div className="ac-title">
+              <RefreshCw size={14} /> {t('interrupted.title')}
+            </div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{t('interrupted.desc')}</div>
+          </div>
+        ) : (
+          <div className="tabs-card">
+            <div className="tabs">
+              {(
+                [
+                  ['plan', t('tabs.plan')],
+                  ['accept', t('tabs.accept')],
+                  ['outputs', t('tabs.outputs')],
+                ] as const
+              ).map(([k, label]) => (
+                <button key={k} className={`tab ${tab === k ? 'on' : ''}`} data-testid={`tab-${k}`} onClick={() => setTab(k)}>
+                  {label}
+                </button>
+              ))}
+              <span style={{ flex: 1 }} />
+              {!actionable && task.status === 'ready' && (
+                <span style={{ color: 'var(--st-ready)', fontSize: 12 }}>{t('tbl.readyHint')}</span>
+              )}
+            </div>
+            <div className="tab-body">
+              {tab === 'plan' && (
+                <>
+                  {!task.plan && <div style={{ color: 'var(--text-3)', fontSize: 12.5, padding: 10 }}>{t('tabs.plan.empty')}</div>}
+                  {task.plan && (
+                    <>
+                      <MD text={task.plan.summary} imgBase={imgBase} />
+                      <div style={{ marginTop: 10 }}>
+                        {task.plan.steps.map((s, i) => {
+                          const active =
+                            running && !s.done && task.plan!.steps.slice(0, i + 1).every((x) => x.done || x.id === s.id);
+                          return (
+                            <div className="plan-step" key={s.id}>
+                              <div className="ps-top">
+                                <span className={`ps-check ${s.done ? 'done' : active ? 'active' : ''}`}>{s.done ? '✓' : ''}</span>
+                                <span className="ps-id">{s.id}</span>
+                                <span className="ps-title">{s.title}</span>
+                              </div>
+                              <div className="ps-goal">{s.goal}</div>
+                              <div className="ps-actions">→ {s.actions.join(' · ')}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+              {tab === 'accept' && (
+                <>
+                  {task.review ? (
+                    <div className="card" style={{ border: 'none', marginBottom: 10 }}>
+                      <div className="card-h" style={{ padding: 0 }}>
+                        {t('card.acceptance')}{' '}
+                        <span className={`badge st-${task.review.overall === 'pass' ? 'done' : 'failed'}`} style={{ marginLeft: 4 }}>
+                          {task.review.overall === 'pass' ? t('card.acceptance.pass') : t('card.acceptance.fail')}
+                        </span>
+                      </div>
+                      {task.review.items.map((it, i) => (
+                        <div className="review-item" key={i}>
+                          <span className={`ri-pass ${it.pass ? 'y' : 'n'}`}>{it.pass ? '✓' : '✗'}</span>
+                          <div style={{ minWidth: 0 }}>
+                            <div>{it.criterion}</div>
+                            <div className="ri-ev">{it.evidence}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    !task.acceptance_text && <div style={{ color: 'var(--text-3)', fontSize: 12.5 }}>{t('tabs.accept.empty')}</div>
+                  )}
+                  {task.acceptance_text && (
+                    <>
+                      <div className="card-h" style={{ padding: 0, marginBottom: 6 }}>
+                        {t('card.acceptanceText')}
+                      </div>
+                      <MD text={task.acceptance_text} imgBase={imgBase} />
+                    </>
+                  )}
+                </>
+              )}
+              {tab === 'outputs' && (
+                <>
+                  {assets.length === 0 && <div style={{ color: 'var(--text-3)', fontSize: 12.5, padding: 4 }}>{t('card.outputs.none')}</div>}
+                  {assets.map((a) => (
+                    <div className="asset-row" key={a.id}>
+                      <FileText size={13} className="ev-ico" />
+                      {a.path_or_url && !/^https?:/i.test(a.path_or_url) ? (
+                        <button
+                          className="a-name-link"
+                          data-testid="asset-name"
+                          title={t('preview.title')}
+                          onClick={() => setPreview({ name: a.name, path: a.path_or_url })}
+                        >
+                          {a.name}
+                        </button>
+                      ) : (
+                        <span className="a-name">{a.name}</span>
+                      )}
+                      <span className="a-sum" title={a.summary}>
+                        {a.summary}
+                      </span>
+                      <span style={{ color: 'var(--text-3)', fontSize: 11, flex: 'none' }}>
+                        {fmtAgo(a.at)} {t('time.ago')}
+                      </span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          </div>
         )}
       </div>
 
-      <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 12, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-        <span className="meta-ico">
-          <Folder size={13} /> <code className="mono">{task.workspace_path}</code>
-        </span>
-        <span className="meta-ico">
-          <GitBranch size={13} /> {t(task.branch_mode === 'manual' ? 'meta.branch.manual' : 'meta.branch.auto', { min: task.branch_timeout_min })}
-        </span>
-        {task.test_cmd && (
-          <span className="meta-ico">
-            {t('meta.test')}：<code className="mono">{task.test_cmd}</code>
-          </span>
-        )}
-        {task.extra_prompt && (
-          <span
-            style={{ maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-            title={task.extra_prompt}
-          >
-            {t('meta.extra')}：{task.extra_prompt}
-          </span>
-        )}
+      {/* ===== 状态条（composer 上方，一行进度） ===== */}
+      <div className="td-statusline" data-testid="status-line">
+        <span className="sl-phase">{t(`status.${task.status}`)}</span>
+        {task.current_action && <span className="sl-action">{task.current_action}</span>}
+        <span style={{ flex: 1 }} />
         {task.started_at && (
-          <span className="meta-ico">
-            <Clock size={13} />{' '}
+          <span className="sl-dur">
             {running ? `${t('meta.running')} ${fmtDur(Date.now() - task.started_at)}` : `${t('meta.duration')} ${fmtDur((task.finished_at ?? Date.now()) - task.started_at)}`}
           </span>
         )}
       </div>
 
-      {/* 阻塞决策卡 */}
-      {task.status === 'blocked' && openBlock && (
-        <div className="alert-card alert-block">
-          <div className="ac-title">
-            <OctagonAlert size={14} /> {t('block.title')}
-          </div>
-          <MD text={openBlock.question} imgBase={imgBase} />
-          <div className="ctx-box">
-            <span>
-              <span className="k">{t('block.ctx.now')}</span>
-              {openBlock.context.current}
-            </span>
-            <span>
-              <span className="k">{t('block.ctx.verified')}</span>
-              {openBlock.context.verified}
-            </span>
-            <span>
-              <span className="k">{t('block.ctx.impact')}</span>
-              {openBlock.context.impact}
-            </span>
-            <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-              <span className="k">{t('block.ctx.refs')}</span>
-              {openBlock.context.refs.map((r) => (
-                <span key={r} className="ref-chip">
-                  {r}
-                </span>
-              ))}
-            </span>
-          </div>
-          <div className="opt-list">
-            {openBlock.options.map((o, i) => (
-              <button key={i} className="opt-btn" data-testid="block-opt" data-idx={i} onClick={() => submitBlock(o.label)}>
-                <span className="o-label">
-                  {String.fromCharCode(65 + i)}. {o.label}
-                  {openBlock.recommended && String.fromCharCode(65 + i) === openBlock.recommended && (
-                    <span className="rec-tag">{t('block.recommended')}</span>
-                  )}
-                </span>
-                <span className="o-sub">
-                  {o.pros && <span className="pro">＋ {o.pros}</span>}{' '}
-                  {o.cons && <span className="con">－ {o.cons}</span>}{' '}
-                  {o.estimate && <span className="est">（{o.estimate}）</span>}
-                </span>
+      {/* ===== composer（永远在底部） ===== */}
+      <div className="td-composer">
+        {longMode ? (
+          <div className="steer-long">
+            <div className="steer-long-head">
+              <span className="sl-title">{t('feed.long.title')}</span>
+              <button className="btn ghost sm" title={t('img.attach')} onClick={() => imgFileRef.current?.click()}>
+                <ImagePlus size={14} /> {t('img.attach')}
               </button>
-            ))}
-          </div>
-          <div className="row">
-            <input
+              <input ref={imgFileRef} type="file" accept="image/*" multiple hidden onChange={(e) => pickImgs(e.target.files)} />
+              <button className="btn ghost sm" title={t('feed.collapse')} onClick={() => setLongMode(false)}>
+                <PanelBottomClose size={14} />
+              </button>
+            </div>
+            <textarea
               className="inp"
-              placeholder={t('block.custom')}
-              value={blockCustom}
-              onChange={(e) => setBlockCustom(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && blockCustom.trim() && submitBlock(blockCustom.trim())}
+              data-testid="input-msg-long"
+              rows={5}
+              placeholder={t('feed.steerPh.long')}
+              value={msg}
+              onChange={(e) => setMsg(e.target.value)}
             />
-            <button className="btn primary" data-testid="btn-block-submit" disabled={!blockCustom.trim()} onClick={() => submitBlock(blockCustom.trim())}>
-              {t('block.submit')}
-            </button>
-          </div>
-          <div className="steer-hint">{t('block.hint')}</div>
-        </div>
-      )}
-
-      {/* 分支回答卡 */}
-      {task.status === 'waiting_input' && (
-        <div className="alert-card alert-wait">
-          <div className="ac-title">
-            <Pencil size={14} /> {t('branch.title', { n: pendingQs.length })}
-          </div>
-          {pendingQs.map((q) => (
-            <div key={q.id} style={{ marginBottom: 14 }}>
-              <div style={{ fontWeight: 650, marginBottom: 7, fontSize: 13 }}>{q.q}</div>
-              <div className="opt-list">
-                {q.options.map((o, i) => (
-                  <button
-                    key={i}
-                    className={`opt-btn ${branchSel[q.id] === o.label ? 'on' : ''}`}
-                    data-testid="branch-opt"
-                    data-q={q.id}
-                    data-idx={i}
-                    onClick={() => setBranchSel((s) => ({ ...s, [q.id]: o.label }))}
-                  >
-                    <span className="o-label">
-                      {String.fromCharCode(65 + i)}. {o.label}
-                      {o.recommended && <span className="rec-tag">{t('branch.recommended')}</span>}
-                    </span>
-                  </button>
+            {draftImgs.length > 0 && (
+              <div className="img-chips">
+                {draftImgs.map((im) => (
+                  <div key={im.num} className="img-chip" title={im.name}>
+                    <img src={api.fileUrl(id, im.path)} alt={im.name} />
+                    <span className="n">{t('img.fig', { n: im.num })}</span>
+                    <button className="chip-x" onClick={() => setDraftImgs((x) => x.filter((y) => y.num !== im.num))}>
+                      <X size={11} />
+                    </button>
+                  </div>
                 ))}
               </div>
+            )}
+            <div className="steer-hint">{t('img.hint')}</div>
+            <div className="steer-row" style={{ marginTop: 6 }}>
+              <button className="btn primary" data-testid="btn-msg-send-long" onClick={sendMsg} disabled={!msg.trim()}>
+                <Send size={13} /> {t('feed.send')}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="steer-row">
               <input
                 className="inp"
-                style={{ marginTop: 6 }}
-                placeholder={t('branch.customPh')}
-                value={branchCustom[q.id] ?? ''}
-                onChange={(e) => setBranchCustom((s) => ({ ...s, [q.id]: e.target.value }))}
+                data-testid="input-msg-short"
+                placeholder={running ? t('feed.steerPh.active') : t('feed.steerPh')}
+                value={msg}
+                onChange={(e) => setMsg(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && sendMsg()}
               />
-            </div>
-          ))}
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button className="btn primary" data-testid="btn-branch-submit" onClick={submitBranch}>
-              {t('branch.submit')}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 待确认卡 */}
-      {task.status === 'awaiting_confirm' && (
-        <div className="alert-card alert-confirm">
-          <div className="ac-title">
-            <ShieldCheck size={14} /> {t('confirm.title')}
-          </div>
-          <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 11 }}>
-            {t('confirm.descA')}
-            {task.test_cmd && (
-              <>
-                {' '}
-                <code className="mono">{task.test_cmd}</code>
-              </>
-            )}{' '}
-            {t('confirm.descB')}
-          </div>
-          <button
-            className="btn primary big"
-            data-testid="btn-confirm-done"
-            onClick={() => api.confirm(id).then(() => {
-              toast(t('act.confirmed'));
-              reloadTask();
-            })}
-          >
-            <Check size={14} /> {t('confirm.btn')}
-          </button>
-        </div>
-      )}
-
-      {task.status === 'interrupted' && (
-        <div className="alert-card alert-wait">
-          <div className="ac-title">
-            <RefreshCw size={14} /> {t('interrupted.title')}
-          </div>
-          <div style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{t('interrupted.desc')}</div>
-        </div>
-      )}
-
-      <div className="task-body">
-        <div className="col">
-          <div className="card">
-            <div className="card-h">{t('card.desc')}</div>
-            <div className="card-b">
-              <MD text={task.description} imgBase={imgBase} />
-            </div>
-          </div>
-
-          {task.plan && (
-            <div className="card">
-              <div className="card-h">
-                {t('card.plan')}
-                {task.answers && Object.keys(task.answers).length > 0 && (
-                  <span style={{ fontWeight: 400, color: 'var(--text-3)' }}>
-                    · {t('card.plan.answers', { n: Object.keys(task.answers).length })}
-                  </span>
-                )}
-              </div>
-              <div className="card-b">
-                <MD text={task.plan.summary} imgBase={imgBase} />
-                <div style={{ marginTop: 10 }}>
-                  {task.plan.steps.map((s, i) => {
-                    const active =
-                      running && !s.done && task.plan!.steps.slice(0, i + 1).every((x) => x.done || x.id === s.id);
-                    return (
-                      <div className="plan-step" key={s.id}>
-                        <div className="ps-top">
-                          <span className={`ps-check ${s.done ? 'done' : active ? 'active' : ''}`}>{s.done ? '✓' : ''}</span>
-                          <span className="ps-id">{s.id}</span>
-                          <span className="ps-title">{s.title}</span>
-                        </div>
-                        <div className="ps-goal">{s.goal}</div>
-                        <div className="ps-actions">→ {s.actions.join(' · ')}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="card">
-            <div className="card-h">
-              {t('feed.title')} <span style={{ marginLeft: 8, fontWeight: 400, color: 'var(--text-3)' }}>{t('feed.count', { n: events.length })}</span>
-              <span style={{ marginLeft: 'auto' }} />
-              <select
-                className="inp"
-                data-testid="feed-filter"
-                style={{ width: 122, padding: '4px 8px', fontSize: 12 }}
-                value={feedFilter}
-                onChange={(e) => setFeedFilter(e.target.value)}
-              >
-                {['all', 'user', 'exec', 'review', 'system'].map((k) => (
-                  <option key={k} value={k}>
-                    {t(`feed.filter.${k}`)}
-                  </option>
-                ))}
-              </select>
-              <button className="btn ghost sm" data-testid="feed-export" title={t('feed.export')} onClick={exportEvents}>
-                <Download size={13} />
+              <button className="btn ghost sm" data-testid="btn-msg-expand" title={t('feed.expand')} onClick={() => setLongMode(true)}>
+                <PanelBottomOpen size={14} />
+              </button>
+              <button className="btn primary" data-testid="btn-msg-send-short" onClick={sendMsg} disabled={!msg.trim()}>
+                <Send size={13} /> {t('feed.send')}
               </button>
             </div>
-            <div className="card-b tight">
-              <div className="feed" data-testid="feed" ref={feedRef}>
-                {events.length === 0 && (
-                  <div style={{ color: 'var(--text-3)', fontSize: 12.5, textAlign: 'center', padding: 18 }}>{t('feed.empty')}</div>
-                )}
-                {shownEvents.map((ev) => (
-                  <div key={ev.seq} data-testid="ev">
-                    <EvRow ev={ev} plan={task.plan} imgBase={imgBase} onPreview={setPreview} />
-                  </div>
-                ))}
-              </div>
-              <div style={{ padding: '0 14px 13px' }}>
-                {longMode ? (
-                  <div className="steer-long">
-                    <div className="steer-long-head">
-                      <span className="sl-title">{t('feed.long.title')}</span>
-                      <button className="btn ghost sm" title={t('img.attach')} onClick={() => imgFileRef.current?.click()}>
-                        <ImagePlus size={14} /> {t('img.attach')}
-                      </button>
-                      <input ref={imgFileRef} type="file" accept="image/*" multiple hidden onChange={(e) => pickImgs(e.target.files)} />
-                      <button className="btn ghost sm" title={t('feed.collapse')} onClick={() => setLongMode(false)}>
-                        <PanelBottomClose size={14} />
-                      </button>
-                    </div>
-                    <textarea
-                      className="inp"
-                      data-testid="input-msg-long"
-                      rows={8}
-                      placeholder={t('feed.steerPh.long')}
-                      value={msg}
-                      onChange={(e) => setMsg(e.target.value)}
-                    />
-                    {draftImgs.length > 0 && (
-                      <div className="img-chips">
-                        {draftImgs.map((im) => (
-                          <div key={im.num} className="img-chip" title={im.name}>
-                            <img src={api.fileUrl(id, im.path)} alt={im.name} />
-                            <span className="n">{t('img.fig', { n: im.num })}</span>
-                            <button className="chip-x" onClick={() => setDraftImgs((x) => x.filter((y) => y.num !== im.num))}>
-                              <X size={11} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <div className="steer-hint">{t('img.hint')}</div>
-                    <div className="steer-row">
-                      <button className="btn primary" data-testid="btn-msg-send-long" onClick={sendMsg} disabled={!msg.trim()}>
-                        <Send size={13} /> {t('feed.send')}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="steer-row">
-                      <input
-                        className="inp"
-                        data-testid="input-msg-short"
-                        placeholder={running ? t('feed.steerPh.active') : t('feed.steerPh')}
-                        value={msg}
-                        onChange={(e) => setMsg(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && sendMsg()}
-                      />
-                      <button className="btn ghost sm" data-testid="btn-msg-expand" title={t('feed.expand')} onClick={() => setLongMode(true)}>
-                        <PanelBottomOpen size={14} />
-                      </button>
-                      <button className="btn primary" data-testid="btn-msg-send-short" onClick={sendMsg} disabled={!msg.trim()}>
-                        <Send size={13} /> {t('feed.send')}
-                      </button>
-                    </div>
-                    <div className="steer-hint">{running ? t('feed.hint.running') : t('feed.hint.inactive')}</div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="col">
-          {task.review && (
-            <div className="card">
-              <div className="card-h">
-                {t('card.acceptance')}{' '}
-                <span className={`badge st-${task.review.overall === 'pass' ? 'done' : 'failed'}`} style={{ marginLeft: 4 }}>
-                  {task.review.overall === 'pass' ? t('card.acceptance.pass') : t('card.acceptance.fail')}
-                </span>
-              </div>
-              <div className="card-b">
-                {task.review.items.map((it, i) => (
-                  <div className="review-item" key={i}>
-                    <span className={`ri-pass ${it.pass ? 'y' : 'n'}`}>{it.pass ? '✓' : '✗'}</span>
-                    <div style={{ minWidth: 0 }}>
-                      <div>{it.criterion}</div>
-                      <div className="ri-ev">{it.evidence}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="card">
-            <div className="card-h">{t('card.outputs')}</div>
-            <div className="card-b tight">
-              {assets.length === 0 && <div style={{ padding: 13, color: 'var(--text-3)', fontSize: 12.5 }}>{t('card.outputs.none')}</div>}
-              {assets.map((a) => (
-                <div className="asset-row" key={a.id}>
-                  <FileText size={13} className="ev-ico" />
-                  {a.path_or_url && !/^https?:/i.test(a.path_or_url) ? (
-                    <button
-                      className="a-name-link"
-                      data-testid="asset-name"
-                      title={t('preview.title')}
-                      onClick={() => setPreview({ name: a.name, path: a.path_or_url })}
-                    >
-                      {a.name}
-                    </button>
-                  ) : (
-                    <span className="a-name">{a.name}</span>
-                  )}
-                  <span className="a-sum" title={a.summary}>
-                    {a.summary}
-                  </span>
-                  <span style={{ color: 'var(--text-3)', fontSize: 11, flex: 'none' }}>
-                    {fmtAgo(a.at)} {t('time.ago')}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {task.acceptance_text && (
-            <div className="card">
-              <div className="card-h">{t('card.acceptanceText')}</div>
-              <div className="card-b">
-                <MD text={task.acceptance_text} imgBase={imgBase} />
-              </div>
-            </div>
-          )}
-        </div>
+            <div className="steer-hint">{running ? t('feed.hint.running') : t('feed.hint.inactive')}</div>
+          </>
+        )}
       </div>
+
       {preview && <AssetPreview taskId={id} file={preview} onClose={() => setPreview(null)} />}
-    </>
+    </div>
   );
 }
-
