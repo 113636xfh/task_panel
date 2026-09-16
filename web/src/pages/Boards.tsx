@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { onEvent } from '../lib/ws';
@@ -14,6 +14,7 @@ export default function Boards() {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const nav = useNavigate();
+  const [sp, setSp] = useSearchParams();
 
   const load = () => api.boards().then(setBoards).catch(() => {});
   useEffect(() => {
@@ -22,6 +23,15 @@ export default function Boards() {
       if (ev.kind === 'boards.changed') load();
     });
   }, []);
+  // 命令面板 ?new=1：自动展开新建行
+  useEffect(() => {
+    if (sp.get('new') === '1') {
+      setCreating(true);
+      const p = new URLSearchParams(sp);
+      p.delete('new');
+      setSp(p, { replace: true });
+    }
+  }, [sp, setSp]);
 
   async function submit() {
     const n = name.trim();

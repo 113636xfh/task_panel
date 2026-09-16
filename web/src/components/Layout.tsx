@@ -5,6 +5,7 @@ import { onEvent, wsState } from '../lib/ws';
 import { api } from '../lib/api';
 import type { Runtime } from '../lib/types';
 import { useI18n } from '../i18n';
+import CommandPalette from './CommandPalette';
 
 const TITLES: [RegExp, string][] = [
   [/^\/boards\/.+\/tasks/, 'crumb.task'],
@@ -156,6 +157,7 @@ export default function Layout() {
           <Outlet />
         </div>
       </div>
+      <CommandPalette />
       <Toasts />
     </div>
   );

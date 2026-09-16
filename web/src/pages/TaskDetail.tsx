@@ -20,6 +20,8 @@ import {
   PanelBottomOpen,
   PanelBottomClose,
   Bot,
+  Download,
+  ListFilter,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { onEvent } from '../lib/ws';
@@ -147,6 +149,7 @@ export default function TaskDetail() {
   const [events, setEvents] = useState<TaskEvent[]>([]);
   const [blocks, setBlocks] = useState<BlockItem[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
+  const [feedFilter, setFeedFilter] = useState('all');
   const [msg, setMsg] = useState('');
   const [longMode, setLongMode] = useState(false);
   const [draftImgs, setDraftImgs] = useState<{ num: number; name: string; path: string }[]>([]);
@@ -184,9 +187,14 @@ export default function TaskDetail() {
       const p = ev.payload ?? {};
       if (p.taskId && p.taskId !== id) return;
       if (ev.kind === 'task.event') {
-        loadEvents(lastSeq.current);
-        if (ev.payload.event.kind === 'block') loadExtra();
-        if (ev.payload.event.kind === 'asset') api.assets(id).then(setAssets).catch(() => {});
+        // 直接消费 WS 携带的事件（带 seq 去重），避免每条消息一次 HTTP 拉取
+        const e = ev.payload.event;
+        if (e && e.seq > lastSeq.current) {
+          lastSeq.current = e.seq;
+          setEvents((x) => (x.some((z) => z.seq === e.seq) ? x : [...x, e]));
+        }
+        if (e?.kind === 'block') loadExtra();
+        if (e?.kind === 'asset') api.assets(id).then(setAssets).catch(() => {});
       }
       if (ev.kind === 'task.status' || ev.kind === 'task.user_message') reloadTask();
     });
@@ -200,6 +208,34 @@ export default function TaskDetail() {
   }, [events.length]);
 
   const openBlock = useMemo(() => blocks.find((b) => b.status === 'open') ?? null, [blocks]);
+
+  // feed 筛选（按 kind 分组）
+  const FEED_GROUPS: Record<string, string[]> = {
+    user: ['user_message'],
+    exec: ['planned', 'step', 'tool', 'asset'],
+    review: ['review', 'block'],
+    system: ['system', 'phase'],
+  };
+  const shownEvents = useMemo(
+    () => (feedFilter === 'all' ? events : events.filter((e) => FEED_GROUPS[feedFilter]?.includes(e.kind))),
+    [events, feedFilter]
+  );
+
+  // 导出全部事件为 JSON（客户端下载）
+  async function exportEvents() {
+    try {
+      const rows = await api.events(id, 0);
+      const blob = new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `task-${task?.num ?? id}-events.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+      toast(t('feed.exported'));
+    } catch (e: any) {
+      toast(e.message, 'err');
+    }
+  }
 
   async function sendMsg() {
     const txt = msg.trim();
@@ -508,15 +544,34 @@ export default function TaskDetail() {
 
           <div className="card">
             <div className="card-h">
-              {t('feed.title')} <span style={{ marginLeft: 'auto', fontWeight: 400, color: 'var(--text-3)' }}>{t('feed.count', { n: events.length })}</span>
+              {t('feed.title')} <span style={{ marginLeft: 8, fontWeight: 400, color: 'var(--text-3)' }}>{t('feed.count', { n: events.length })}</span>
+              <span style={{ marginLeft: 'auto' }} />
+              <select
+                className="inp"
+                data-testid="feed-filter"
+                style={{ width: 122, padding: '4px 8px', fontSize: 12 }}
+                value={feedFilter}
+                onChange={(e) => setFeedFilter(e.target.value)}
+              >
+                {['all', 'user', 'exec', 'review', 'system'].map((k) => (
+                  <option key={k} value={k}>
+                    {t(`feed.filter.${k}`)}
+                  </option>
+                ))}
+              </select>
+              <button className="btn ghost sm" data-testid="feed-export" title={t('feed.export')} onClick={exportEvents}>
+                <Download size={13} />
+              </button>
             </div>
             <div className="card-b tight">
               <div className="feed" data-testid="feed" ref={feedRef}>
                 {events.length === 0 && (
                   <div style={{ color: 'var(--text-3)', fontSize: 12.5, textAlign: 'center', padding: 18 }}>{t('feed.empty')}</div>
                 )}
-                {events.map((ev) => (
-                  <EvRow key={ev.seq} ev={ev} plan={task.plan} imgBase={imgBase} />
+                {shownEvents.map((ev) => (
+                  <div key={ev.seq} data-testid="ev">
+                    <EvRow ev={ev} plan={task.plan} imgBase={imgBase} />
+                  </div>
                 ))}
               </div>
               <div style={{ padding: '0 14px 13px' }}>

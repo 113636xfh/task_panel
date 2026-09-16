@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Plus, X, RefreshCw, ImagePlus } from 'lucide-react';
 import { api } from '../lib/api';
 import { onEvent } from '../lib/ws';
@@ -287,11 +287,22 @@ function NewTaskModal({
 export default function BoardDetail() {
   const { id = '' } = useParams();
   const nav = useNavigate();
+  const [sp, setSp] = useSearchParams();
   const { t } = useI18n();
   const [board, setBoard] = useState<any | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [showNew, setShowNew] = useState(false);
   const [skills, setSkills] = useState<{ name: string; source: string; kind: string; description: string }[]>([]);
+
+  // 命令面板 ?new=1：自动展开新建任务弹窗
+  useEffect(() => {
+    if (sp.get('new') === '1') {
+      setShowNew(true);
+      const p = new URLSearchParams(sp);
+      p.delete('new');
+      setSp(p, { replace: true });
+    }
+  }, [sp, setSp]);
 
   const loadTasks = () => {
     api.tasks(id).then(setTasks).catch(() => {});

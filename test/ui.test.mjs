@@ -233,3 +233,94 @@ async function run2() {
   await new Promise((r) => setTimeout(r, 400));
   await shot('lang-zh-back');
 }
+
+test('UI 人形：⌘K 命令面板（搜索/键盘导航/跳转）', async () => {
+  try {
+    await run3();
+  } catch (e) {
+    await shotFail('test3');
+    throw e;
+  }
+});
+
+async function run3() {
+  // 确保在看板页
+  const board = (await a.get('/boards'))[0];
+  await page.goto(`${S.base}/boards/${board.id}`, { waitUntil: 'networkidle0' });
+
+  // Ctrl+K 打开
+  await page.keyboard.down('Control');
+  await page.keyboard.press('KeyK');
+  await page.keyboard.up('Control');
+  await page.waitForSelector('[data-testid="cmdk-panel"]', { visible: true });
+  const itemsAll = await page.$$eval('[data-testid="cmdk-item"]', (els) => els.length);
+  assert.ok(itemsAll >= 7, '面板应有动作+看板条目');
+
+  // 搜索“设置” → 过滤到 1 条 → Enter 跳转
+  await page.type('[data-testid="cmdk-input"]', '设置');
+  await page.waitForFunction(() => {
+    const n = document.querySelectorAll('[data-testid="cmdk-item"]').length;
+    return n === 1;
+  });
+  await shot('cmdk-filtered');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => location.pathname === '/settings', { timeout: 5000 });
+  assert.equal(page.url(), S.base + '/settings');
+
+  // 再开面板 → ArrowDown 到“技能” → Enter
+  await page.keyboard.down('Control');
+  await page.keyboard.press('KeyK');
+  await page.keyboard.up('Control');
+  await page.waitForSelector('[data-testid="cmdk-panel"]', { visible: true });
+  await page.type('[data-testid="cmdk-input"]', '技能');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => location.pathname === '/skills', { timeout: 5000 });
+  assert.equal(page.url(), S.base + '/skills');
+  await shot('cmdk-nav-skills');
+
+  // Esc 关闭
+  await page.keyboard.down('Control');
+  await page.keyboard.press('KeyK');
+  await page.keyboard.up('Control');
+  await page.waitForSelector('[data-testid="cmdk-panel"]', { visible: true });
+  await page.keyboard.press('Escape');
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(await page.evaluate(() => !!document.querySelector('[data-testid="cmdk-panel"]')), false);
+
+  // ===== feed 筛选 / 导出 =====
+  // 打开任务 1（已完成，事件最多）
+  const b1 = (await a.get('/boards'))[0];
+  const tasks1 = await a.get(`/boards/${b1.id}/tasks`);
+  const done1 = tasks1.find((tt) => tt.status === 'done');
+  assert.ok(done1, '应有已完成任务');
+  await page.goto(`${S.base}/boards/${b1.id}/tasks/${done1.id}`, { waitUntil: 'networkidle0' });
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="ev"]').length > 0, { timeout: 10000 });
+  await new Promise((r) => setTimeout(r, 600));
+  const allN = await page.$$eval('[data-testid="ev"]', (els) => els.length);
+  assert.ok(allN >= 8, `完成态任务事件应较多（实际 ${allN}）`);
+
+  // 筛选“消息” → 应少于全部（本任务无留言 → 0）
+  await page.select('[data-testid="feed-filter"]', 'user');
+  await new Promise((r) => setTimeout(r, 250));
+  const userN = await page.$$eval('[data-testid="ev"]', (els) => els.length);
+  assert.ok(userN < allN, `筛选后应减少（全部 ${allN} → 消息 ${userN}）`);
+  // 筛选“验收·阻塞” → 应包含 review 行
+  await page.select('[data-testid="feed-filter"]', 'review');
+  await new Promise((r) => setTimeout(r, 250));
+  const reviewN = await page.$$eval('[data-testid="ev"]', (els) => els.length);
+  assert.ok(reviewN >= 1, '验收组至少 1 条');
+  await shot('feed-filter-review');
+
+  // 恢复全部 → 导出（应拉全量 /events?since=0）
+  await page.select('[data-testid="feed-filter"]', 'all');
+  let exportSeen = false;
+  page.on('response', (resp) => {
+    if (resp.url().includes('/events?since=0')) exportSeen = true;
+  });
+  await page.click('[data-testid="feed-export"]');
+  await new Promise((r) => setTimeout(r, 900));
+  assert.ok(exportSeen, '导出应请求全量事件');
+  const expToast = await page.evaluate(() => document.querySelector('.toast')?.textContent ?? '');
+  assert.ok(expToast.length > 0, '导出应有 toast');
+  await shot('feed-exported');
+}
