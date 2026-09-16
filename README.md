@@ -20,23 +20,23 @@ npm start            # 单端口 8787：API + WebSocket + 静态文件
 ## 架构速览
 
 - **单 Node 进程、单端口、零原生依赖**：express（API）+ ws（事件流）+ `node:sqlite`（WAL）
-- **执行器**：每任务一个 `pi --mode rpc` 子进程（cwd = 任务工作目录）；P0 用 stub 模拟完整生命周期
+- **执行器**：每任务一个 `pi --mode rpc` 子进程（cwd = 任务工作目录）；JSONL 协议、agent_settled 判静止、`extension_ui_request` 无人值守自动应答
 - **跨平台**：Ubuntu / Windows 一致（`path.join`、按平台 spawn、沙盒插件非冲突）
 - **状态机**：`queued → planning → [waiting_input] → executing → [blocked] → testing → awaiting_confirm → done`（另有 interrupted / failed / cancelled）
 - **事件流**：每任务 seq 单调 + WS 断线按 `since` 重放
 
-## P0 范围（当前）
+## P1 核心闭环（当前）
 
 看板列表 / 7+1 列看板 / 任务详情（打磨计划、分支回答、阻塞决策卡、验收、留言板 + 短留言 steer / 长提示词大编辑框 + 附图）/ 技能三级（全局只读 · 项目层继承 · 任务级手动安装）/ 设置（并发、分支策略、模型、全局系统提示词 + 历史）/ 双主题（Linear 风令牌，亮/暗）。
 
-**长提示词与附图**：创建任务 / 任务详情均可写长文并附图；图片自动编号存入 `<workspace>/work/images/`，正文用「图 N」引用，服务端自动追加映射块（UI 渲染为图片，agent 用 read 工具读路径即可看图，多模态模型直接看）；agent 交付反馈里的 `![[图 N]](work/xxx.png)` 同样自动渲染（详见 docs/design/05-architecture.md §9）。
+**真实 pi 执行**（P1）：每任务一个 `pi --mode rpc` 子进程，在工作目录内自主完成「规划（work/plan.json + 分支问答）→ 执行（plan 驱动，block.json 即停）→ 测试（test_cmd 走 RPC bash）→ 独立验收官逐项判定（work/review.json，最多 3 次重试，用尽转人工）」；执行中可实时 steer（下次 LLM 调用前生效）；阻塞/分支决策由用户拍板后自动恢复（`switch_session` 全量上下文重放 + 决策注入）；长提示词/附图机制同 P0.5（docs/design/05-architecture.md §9/§10）。
 
-执行器为 **stub**（脚本化定时器模拟），用于联调 UI、调度、事件流、状态机。P1 接入真实 pi RPC 执行、P2 抢占/⌘K/恢复加固（见 docs/design/06-roadmap.md）。
+实测三条真实任务全链路通过：纯执行→done；分支 3 问 + 中途 steer 干预→done；执行中阻塞→用户拍板→带决策恢复→验收通过→done。P2 抢占/⌘K/恢复加固见 docs/design/06-roadmap.md。
 
 ## 目录
 
 ```
-server/src/   db(schema) · bus(WS) · api(REST) · scheduler(状态机) · runner(stub 执行器, P1 替换) · skills(三级扫描/安装) · index(入口)
-web/src/      styles(tokens+app) · lib(api/ws/md/fmt) · components(Layout) · pages(Boards/BoardDetail/TaskDetail/Skills/Settings)
+server/src/   db(schema) · bus(WS) · api(REST) · scheduler(状态机) · executor(PiSession, pi --mode rpc 封装) · runner(任务执行器: 规划/执行/阻塞/测试/验收/恢复) · skills(三级扫描/安装) · index(入口)
+web/src/      styles(tokens+app) · lib(api/ws/md/img/fmt) · i18n(zh/en) · components(Layout) · pages(Boards/BoardDetail/TaskDetail/Skills/Settings)
 docs/design/  设计文档包（00-06）
 ```

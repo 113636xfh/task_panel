@@ -257,3 +257,21 @@ task_skills(id, task_id, name, source, installed_at)        -- 任务级项目�
 ### 9.4 与 pi CLI 的无干扰（再次确认）
 
 附图机制完全落在任务工作目录内（`work/images/`），不改任何 pi 全局配置、不动 `PI_CODING_AGENT_DIR`；pi CLI 单独使用与本插件互不影响。
+
+## 10. 真实执行器实现（P1）
+
+每个任务 = 一个 `pi --mode rpc` 子进程（`server/src/executor.ts` 的 `PiSession`）：
+
+- **进程**：`pi --mode rpc --provider <p> --model <m> --name taskpanel-<num>`，cwd=任务工作目录；Windows 用 `shell:true` + `taskkill /t /f` 连子树回收。
+- **协议**：严格 JSONL（stdout 按 `\n` 切分、行首剥 `\r`）；`send()` 用自增 id 关联响应，未知 id 忽略；`agent_settled` 判静止。
+- **无人值守**：`extension_ui_request`（用户交互型扩展）自动应答——confirm→true、select→首项、input/editor→cancel，并记 system 事件。
+- **阶段编排**（`server/src/runner.ts`）：
+  1. **planning**：提示词要求产出 `work/plan.json`（steps / branch_questions / acceptance / test_cmd 建议）；缺失时追问一次，仍缺 failed。
+  2. **branch**：plan 含 branch_questions 且 `branch_mode=manual` → `waiting_input`（决策卡）；auto 或超时 → 默认答案（recommended/首项）自动合入。
+  3. **executing**：提示词 = 计划 + 分支答案 + 排队留言 + 协议文件约定（`block.json` / `done.json` / `plan.json` 状态写回）；block.json 1s 轮询（streaming 中出现即 abort 本轮）→ 落库 `task_blocks` → `blocked` + 释放槽位。
+  4. **testing**：`test_cmd` 走 pi RPC `bash`（输出进会话上下文，agent 可见失败原因）→ 独立「验收官」提示词逐项判定写 `work/review.json`（缺失时按测试退出码自动判定）。
+  5. **重试**：`overall=fail` 且 `retry_count < retry_max(3)` → 带 review 反馈重新执行；用尽 → 转人工（awaiting_confirm）。
+- **恢复**：`resume()` 起新进程，checkpoint 有 session 文件则 `switch_session` 全量重放；清理上轮 `block.json` / `review.json`；排队留言 + 最近一次阻塞决策文本合入提示词（用户决策最高优先级，agent 不重走写 block.json 步骤）。
+- **验收标准优先级**：任务创建时的原始验收标准 > plan.acceptance（规划期推导项可能因阻塞决策过时）。
+- **steer**：执行中（streaming）走 RPC `steer`（下次 LLM 调用前生效）；空闲时入队，在下一个执行点合入。
+- **崩溃兜底**：子进程意外退出 → `failed` + stderr 尾部；启动失败（pi 不在 PATH 等）→ 直接 `failed`。

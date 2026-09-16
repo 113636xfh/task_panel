@@ -152,7 +152,9 @@ ${extra ? `\n${extra}\n` : ''}
 }
 
 function judgePrompt(t: TaskRow, plan: Plan, testCmd: string, code: number | null): string {
-  const acc = plan.acceptance.length ? plan.acceptance : (t.acceptance_text || '').split('\n').map((x) => x.trim()).filter(Boolean);
+  // 验收标准以任务创建时的原始标准为准（plan.acceptance 是规划期的推导，可能随阻塞决策过时）
+  const userAcc = (t.acceptance_text || '').split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+  const acc = userAcc.length ? userAcc : plan.acceptance;
   return `# 验收判定（你现在是独立验收官，与实现者角色分离）
 客观测试结果：命令 \`${testCmd || '（无测试命令）'}\`，退出码 ${code ?? 'N/A'}（完整输出见上方 bash 记录）。
 
@@ -163,8 +165,8 @@ ${JSON.stringify({ items: acc.map((c) => ({ criterion: c, pass: false, evidence:
 规则：
 - 全部 pass 才能 overall=pass；
 - 测试命令非 0 退出且无法合理解释，必须 fail；
-- 无测试命令时以验收标准逐项核查为准。
-写完 work/review.json 立即停止，不要改任何业务代码。`;
+- 无测试命令时以验收标准逐项核查为准；
+- 若执行中发生过阻塞且用户已拍板，最终状态以用户决策为准（与早期计划中阶段性要求冲突时，用户决策优先）。写完 work/review.json 立即停止，不要改任何业务代码。`;
 }
 
 // ---------------- 执行器 ----------------
@@ -404,7 +406,15 @@ export class TaskRunner {
     for (const s of plan.steps) if (s.done) this.emit(t.id, 'step', { id: s.id, done: true });
     this.execStarted = false;
     this.nags = 0;
-    await this.execLoop(plan);
+    // 阻塞已决：把用户决策合入恢复 prompt（否则 agent 会按原计划重走「写 block.json」步骤）
+    const answered = db.prepare(
+      "SELECT question, answer FROM task_blocks WHERE task_id=? AND status='answered' ORDER BY id DESC LIMIT 1"
+    ).get(t.id) as { question: string; answer: string } | undefined;
+    let extra = '';
+    if (answered?.answer) {
+      extra = `# 阻塞已决（用户拍板，最高优先级）\n之前的阻塞问题：${answered.question}\n用户决策：${answered.answer}\n按此决策继续完成剩余步骤（例如把决策值写入相应文件）；【不要】再写 work/block.json；计划步骤若与该决策冲突，一律以用户决策为准。`;
+    }
+    await this.execLoop(plan, extra || undefined);
   }
 
   private async planPhase(): Promise<Plan | null> {
