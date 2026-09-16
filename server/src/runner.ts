@@ -84,6 +84,8 @@ function planPrompt(t: TaskRow, s: ReturnType<typeof getSettings>): string {
   const skills = (db.prepare('SELECT name, kind FROM task_skills WHERE task_id=?').all(t.id) as { name: string; kind: string }[])
     .map((r) => `- ${r.kind} ${r.name}`)
     .join('\n');
+  // 注意：全局系统提示词（s.systemPrompt）不进这里——它被写入 <workspace>/.pi/APPEND_SYSTEM.md
+  // 进 system 消息（全会话稳定、跨任务相同 → 前缀缓存友好）。此处的内容都是任务特定的。
   return `# 任务
 ${t.title}
 
@@ -95,9 +97,6 @@ ${t.acceptance_text || '（未提供，请在 plan.json 的 acceptance 中自行
 
 # 测试命令
 ${t.test_cmd || '（未提供，请在 plan.json 的 test_cmd 中给出建议命令；确实无法给出则留空字符串）'}
-
-# 全局约束（来自系统设置，优先级最高）
-${s.systemPrompt || '（无）'}
 
 # 本任务附加说明
 ${t.extra_prompt || '（无）'}
@@ -237,7 +236,19 @@ export class TaskRunner {
     // 清理上一轮遗留的协议文件（恢复执行场景）
     deleteQuiet(workFile(t.workspace_path, 'block.json'));
     deleteQuiet(workFile(t.workspace_path, 'review.json'));
+    // 全局系统提示词 → <workspace>/.pi/APPEND_SYSTEM.md（pi 自动追加到 system 消息：
+    // 全会话稳定、跨任务相同 → 前缀缓存友好；不动用户全局 ~/.pi/agent 配置，跨平台无命令行长度问题）
+    const appendFile = path.join(t.workspace_path, '.pi', 'APPEND_SYSTEM.md');
+    if (s.systemPrompt && s.systemPrompt.trim()) {
+      fs.mkdirSync(path.join(t.workspace_path, '.pi'), { recursive: true });
+      fs.writeFileSync(appendFile, s.systemPrompt, 'utf8');
+    } else {
+      deleteQuiet(appendFile);
+    }
     const args = ['--name', `taskpanel-${t.id}`];
+    // 非交互 RPC 模式下 defaultProjectTrust=ask 会忽略项目内 .pi 资源（信任门），
+    // --approve 仅对本次运行生效（不写 trust.json、不动全局配置），保证 APPEND_SYSTEM.md 被加载
+    args.push('--approve');
     if (s.provider) args.push('--provider', String(s.provider));
     if (s.execModel) args.push('--model', String(s.execModel));
     this.sess = new PiSession(t.workspace_path, args);
@@ -454,6 +465,14 @@ export class TaskRunner {
 
   private async execLoop(plan: Plan, extra?: string) {
     const t = this.t;
+    // plan.json 以磁盘为准（agent 每完成一步会写回 done=true；恢复/重试时内存副本会过时）
+    const disk = readJson(workFile(t.workspace_path, 'plan.json'));
+    if (disk && Array.isArray(disk.steps)) {
+      for (const s of plan.steps) {
+        const d = disk.steps.find((x: any) => x && x.id === s.id);
+        if (d) s.done = !!d.done;
+      }
+    }
     if (!this.execStarted) {
       this.execStarted = true;
       this.emit(t.id, 'phase', { phase: 'executing' }, '▸ 按计划执行');

@@ -102,7 +102,10 @@ function startTask(t: TaskRow) {
 function tick() {
   const s = getSettings();
   if (runners.size >= s.concurrency) return;
-  const rows = db.prepare("SELECT * FROM tasks WHERE status='queued' ORDER BY priority ASC, created_at ASC").all() as TaskRow[];
+  // queued 优先于 interrupted（新任务优先，被打断的随后补上）
+  const rows = db.prepare(
+    "SELECT * FROM tasks WHERE status IN ('queued','interrupted') ORDER BY (status='queued') DESC, priority ASC, created_at ASC"
+  ).all() as TaskRow[];
   for (const t of rows) {
     if (runners.size >= s.concurrency) break;
     startTask(t);
@@ -131,6 +134,13 @@ export function startScheduler() {
   started = true;
   tick();
   for (const t of [setInterval(tick, 1000), setInterval(() => publish('runtime.slots', runtimeStats()), 5000)]) runtimers.push(t as unknown as NodeJS.Timeout);
+}
+
+/** 服务退出前回收所有 pi 子进程（否则 Windows 上会变孤儿进程） */
+export function shutdownRunners() {
+  for (const r of runners.values()) {
+    try { r.stop(); } catch { /* ignore */ }
+  }
 }
 
 // ---------------- 服务重启恢复：孤儿任务转 interrupted ----------------

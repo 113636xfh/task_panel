@@ -6,7 +6,7 @@ import { WebSocketServer } from 'ws';
 import { ROOT } from './db.js';
 import { attachSocket } from './bus.js';
 import { api } from './api.js';
-import { startScheduler, recoverOrphans } from './scheduler.js';
+import { startScheduler, recoverOrphans, shutdownRunners } from './scheduler.js';
 
 const port = Number(process.env.TP_PORT ?? 8787);
 
@@ -31,6 +31,17 @@ wss.on('connection', (ws, req) => {
 
 recoverOrphans();
 startScheduler();
+
+// 退出前回收 pi 子进程（Windows 上孤儿 pi 进程会继续烧 token）
+let shuttingDown = false;
+function gracefulShutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try { shutdownRunners(); } catch { /* ignore */ }
+  setTimeout(() => process.exit(0), 500).unref?.();
+}
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as NodeJS.Signals[]) process.on(sig, gracefulShutdown);
+process.on('exit', () => { try { shutdownRunners(); } catch { /* ignore */ } });
 
 server.listen(port, () => {
   console.log(`[task-panel] http://localhost:${port}  (api=/api, ws=/ws)`);

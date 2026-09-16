@@ -275,3 +275,37 @@ task_skills(id, task_id, name, source, installed_at)        -- 任务级项目�
 - **验收标准优先级**：任务创建时的原始验收标准 > plan.acceptance（规划期推导项可能因阻塞决策过时）。
 - **steer**：执行中（streaming）走 RPC `steer`（下次 LLM 调用前生效）；空闲时入队，在下一个执行点合入。
 - **崩溃兜底**：子进程意外退出 → `failed` + stderr 尾部；启动失败（pi 不在 PATH 等）→ 直接 `failed`。
+
+## 11. 前缀缓存审计（LLM prefix cache）
+
+**原则：task_panel 对 pi 会话的一切操作必须是 append-only；system 消息全会话稳定；任务特定内容只出现在新增消息里。**
+
+### 11.1 逐项审计结论（2026-07-15）
+
+| 交互 | 机制 | 前缀影响 |
+|---|---|---|
+| 各阶段 `prompt`（规划/执行/nag/验收/重试） | 全部是追加新 user 消息（rpc.md：prompt 入队为普通消息） | 历史只增不改 → 安全 |
+| `steer`（执行中实时干预） | 「当前回合工具调用结束后、下次 LLM 调用前」投递 → 追加在历史末尾 | 安全 |
+| `bash` RPC（test_cmd） | 命令 + 输出作为工具往返追加进会话 | 安全 |
+| `switch_session`（断点恢复） | 仅加载既有会话文件，不插入任何标记消息 | 历史逐字节相同 → 安全（缓存仍温热时恢复即命中） |
+| `extension_ui_request` 自动应答 | 扩展自己的流程在历史末尾继续（工具结果追加） | 安全 |
+| 系统消息（pi 基础 prompt + 已装扩展的 systemPrompt 贡献） | 每进程 spawn 一次后全程不变；task_panel 不改 `PI_CODING_AGENT_DIR`、不动 `~/.pi/agent/` | 会话内稳定 → 安全 |
+| 动态内容（时间戳/随机 id/图映射/review JSON） | 全部只出现在新增消息正文里；RPC 命令 id（`tp-…`）不进 prompt | 安全 |
+
+### 11.2 全局系统提示词进 system 消息（跨任务共享前缀）
+
+- 设置页的全局系统提示词在 spawn 前写入 **`<workspace>/.pi/APPEND_SYSTEM.md`**（pi 自动「追加」到默认 system prompt，不替换；不动用户全局配置，无 Windows 命令行长度问题）。
+- 跨任务效果：所有任务的 LLM 请求前缀 = [pi 基础 system prompt（相同）+ 扩展贡献（相同）+ 全局提示词（相同）] → 前缀缓存跨任务共享，全局提示词越长收益越大。
+- **信任门**：非交互模式（rpc）默认 `defaultProjectTrust=ask` → 忽略项目内 `.pi` 资源。spawn 必须带 **`--approve`**（仅本次运行生效，不写 `trust.json`）。已用 marker 实验双向验证：带 `--approve` 模型能准确回读 APPEND_SYSTEM.md 中的码；不带则完全不可见。
+- 任务特定的 `extra_prompt` / 描述 / 验收标准 / 图映射 → 只进首条 user 消息（任务特定，不参与跨任务共享）。
+- 用户中途修改全局提示词 → 下一任务的 system 消息变化 → 一次自然失效（用户行为，非 bug）；运行中恢复的任务会同时看到 system 新值 + 首条消息旧值（轻微重复，不影响正确性）。
+- 运行与恢复之间若更换了执行模型 → 不同模型的缓存本就独立（自然失效，非 bug）。
+
+### 11.3 环境侧注意事项（非 task_panel 代码，但会破缓存）
+
+- pi 文档明示（extensions.md）：**会话中激活/停用带 `promptSnippet`/`promptGuidelines` 的工具会重建 system prompt → 前缀失效**。若某任务运行中 agent 触发了此类工具集变更，该会话后续前缀缓存失效——属扩展行为，task_panel 不控制，也不应「修复」（工具元数据是扩展作者的设计）。
+- pi 会话压缩（context compaction）会改写历史 → 压缩点后缓存自然重建，属 pi 机制。
+
+### 11.4 审计附带修复
+
+- `execLoop` 开始处从磁盘重读 `work/plan.json` 同步 `done` 标志：重试/恢复时 prompt 里的「计划当前状态」不再用内存旧副本（内容与缓存无关，但避免 agent 重做已完成步骤）。
