@@ -3,5 +3,6 @@ dist/
 data/
 workspaces/
 *.log
-.DS_Store
-.env
+server.log
+shot-*.png
+nul

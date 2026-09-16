@@ -1,0 +1,68 @@
+/* ============ Task Panel 设计令牌 ============ */
+/* 参考：Linear 工程克制风 —— 近黑/纯白、单强调色、1px 发丝线、4px 网格、Inter + 等宽 */
+
+:root {
+  --font: 'Inter Variable', Inter, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --font-mono: ui-monospace, 'JetBrains Mono', 'Cascadia Code', Consolas, 'SF Mono', monospace;
+
+  --sb: 232px; /* sidebar 宽 */
+  --r-sm: 4px; --r-md: 6px; --r-lg: 10px;
+
+  /* 中性（亮） */
+  --bg: #ffffff;
+  --bg-panel: #f7f8fa;
+  --bg-panel-2: #eff1f4;
+  --bg-hover: #f2f3f6;
+  --text: #1d1e20;
+  --text-2: #5c6169;
+  --text-3: #9499a3;
+  --line: #e5e7eb;
+  --line-strong: #d2d6dd;
+  --accent: #5e6ad2;
+  --accent-hi: #7170ff;
+  --accent-soft: rgba(94, 106, 210, 0.10);
+  --sh: 0 8px 24px rgba(0, 0, 0, 0.06);
+  --sh-lg: 0 16px 48px rgba(0, 0, 0, 0.12);
+
+  /* 状态（亮） */
+  --st-queued: #6b7280;      --st-queued-bg: #f2f3f6;
+  --st-planning: #b08514;    --st-planning-bg: #faf6e9;
+  --st-waiting: #d97706;     --st-waiting-bg: #fff7ed;
+  --st-executing: #2f6feb;   --st-executing-bg: #edf3fe;
+  --st-blocked: #ef4444;     --st-blocked-bg: #fef2f2;
+  --st-testing: #0f766e;     --st-testing-bg: #e8f7f5;
+  --st-confirm: #7170ff;     --st-confirm-bg: #f1effe;
+  --st-done: #1a7f37;        --st-done-bg: #eafbef;
+  --st-failed: #b3403a;      --st-failed-bg: #fdecea;
+  --st-interrupted: #6b7280; --st-interrupted-bg: #f2f3f6;
+  --st-cancelled: #9ca3af;   --st-cancelled-bg: #f2f3f6;
+}
+
+[data-theme='dark'] {
+  --bg: #0f1011;
+  --bg-panel: #16171a;
+  --bg-panel-2: #1c1d21;
+  --bg-hover: #202127;
+  --text: #ededed;
+  --text-2: #a5a8b0;
+  --text-3: #6f727a;
+  --line: #26282e;
+  --line-strong: #343741;
+  --accent: #7170ff;
+  --accent-hi: #8b90ff;
+  --accent-soft: rgba(113, 112, 255, 0.16);
+  --sh: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --sh-lg: 0 16px 48px rgba(0, 0, 0, 0.7);
+
+  --st-queued: #9ca0a8;      --st-queued-bg: #1d1e22;
+  --st-planning: #e6b84c;    --st-planning-bg: #2a2410;
+  --st-waiting: #f0954a;     --st-waiting-bg: #2b1e12;
+  --st-executing: #6b9bef;   --st-executing-bg: #152238;
+  --st-blocked: #f87171;     --st-blocked-bg: #2e1515;
+  --st-testing: #34b3a4;     --st-testing-bg: #12241f;
+  --st-confirm: #8b90ff;     --st-confirm-bg: #1d1c33;
+  --st-done: #4db06d;        --st-done-bg: #14261a;
+  --st-failed: #c96b62;      --st-failed-bg: #2a1715;
+  --st-interrupted: #9ca0a8; --st-interrupted-bg: #1d1e22;
+  --st-cancelled: #7d818a;   --st-cancelled-bg: #1a1b1e;
+}

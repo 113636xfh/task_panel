@@ -33,6 +33,8 @@
 | 派 Agent 系统提示词 | **两组**：① **全局**：在设置页编辑保存，立即作用于所有新启动的派 Agent（**中断恢复的也按新的来**；已运行中的会话不动）；② **任务专属**：创建任务模态的补充框（可选，叠加在全局之后）。两者均只通过子进程 `--system-prompt` 参数传入，**不影响全局 pi CLI** |
 | 实时用户留言 | 任务详情页底部留言框，任何时刻可发：任务活跃时走 pi RPC `steer`（当前工具轮结束后、下次 LLM 调用前生效）；任务非活跃时留言入队，合入下次启动/恢复提示词；所有留言记入留言板并全板可见 |
 | 轻量化约束 | **单 Node 进程、单端口**（API + WS + 静态文件）；无重型 UI 库（自写 CSS 令牌）；SQLite WAL + 索引；事件流 100ms 合帧批量推送；不常驻多余进程（pi 进程数 = 并发数）；前端产物 gzip 后保持精简 |
+| 跨平台 | **Ubuntu 与 Windows 均可运行**：路径一律 `path.join`；pi 子进程 spawn 按平台处理（Windows npm 全局是 `pi.cmd` shim，需 `shell: true` 或解析 `pi.cmd`）；测试命令走平台默认 shell（Linux `sh -c` / Windows `cmd /d /s /c`）；不依赖 GNU 独有命令 |
+| 沙盒插件兼容 | 支持 pi 沙盒插件（Gondolin 工具路由扩展 / Docker / OpenShell 等，当前未安装）且**不与其冲突**：① 不改 `PI_CODING_AGENT_DIR`，全局沙盒扩展自然继承；② spawn 只传 `--mode/--provider/--model/--system-prompt/--session-dir`，不加任何禁用/覆盖扩展的参数；③ **验收测试命令通过 pi RPC `bash` 命令执行**（与 agent 自身 bash 同策略），不在宿主机直接 spawn，避免绕过沙盒 |
 
 ## 3. 任务生命周期（状态机）
 

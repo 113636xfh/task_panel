@@ -85,10 +85,16 @@ spawn("pi", ["--mode","rpc",
 ```
 
 - **输入**（stdin, JSONL）：`{"type":"prompt","message":<阶段提示词>}`
+- **跨平台**：`spawn("pi", args, { shell: process.platform === "win32" })`（Windows 下 npm 全局 pi 是 `pi.cmd` shim）；Linux 直接 spawn；`--session-dir` 用绝对路径（Windows 盘符无碍）；测试命令：Linux `sh -c <cmd>` / Windows `cmd /d /s /c <cmd>`，超时 kill
 - **输出**（stdout, JSONL 事件流）：`message_start/update/end`、`tool_execution_start/update/end`、`turn_start/end`、`agent_start/end` 等
 - **首行** `{"type":"session",...}` 含 session id；pi 将 session 持久化为 JSONL 文件（`--session-dir <workspaces/t-X/.pi-sessions>`）
 - **终止**：`{"type":"abort"}` 后 SIGTERM；进程退出码与 stderr 落库
 - **恢复（全量重放）**：重新 spawn 时指向同一 session 文件（resume），pi 载入完整历史，再 `prompt` 发送"继续执行"指令。留言板 = 该 session 事件流的持久化投影（`task_events` 表），前端渲染即留言板。
+
+**沙盒插件非冲突（Gondolin / Docker / OpenShell 等，可选装）**
+- 沙盒扩展是全局扩展（`~/.pi/agent/extensions/`，如 gondolin 将内置 read/write/edit/bash/grep/find/ls 路由进 micro-VM，宿主 cwd 挂为 /workspace 写回宿主）；Task Panel spawn 不改 `PI_CODING_AGENT_DIR`、不传禁用/覆盖扩展的参数 → 沙盒扩展自然生效，未装则行为不变
+- 项目级 `.pi/extensions`（Task Panel 安装的技能/扩展）与全局沙盒扩展共存，加载顺序由 pi 自身处理
+- **验收测试不走宿主机 spawn**：`test_cmd` 通过 pi RPC `bash` 命令或执行 agent 自身 bash 工具运行 → 与沙盒同一策略；P1 实现，P0 stub 不执行真实命令
 
 ### 4.0 系统提示词合成与技能生效集
 
