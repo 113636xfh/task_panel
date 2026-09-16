@@ -459,7 +459,7 @@ export class TaskRunner {
     }
     const plan = normalizePlan(raw, t);
     this.emit(t.id, 'planned', plan, '');
-    this.emit(t.id, 'asset', { kind: 'plan', name: 'work/plan.json', summary: plan.summary.slice(0, 80) });
+    this.emit(t.id, 'asset', { kind: 'plan', name: 'work/plan.json', path: 'work/plan.json', summary: plan.summary.slice(0, 80) });
     return plan;
   }
 

@@ -102,7 +102,7 @@ export class StubRunner {
     this.later(STEP_MS, async () => {
       this.writeWorkFile('plan.json', plan);
       this.emit(t.id, 'planned', plan, '');
-      this.emit(t.id, 'asset', { kind: 'plan', name: 'work/plan.json', summary: plan.summary.slice(0, 80) });
+      this.emit(t.id, 'asset', { kind: 'plan', name: 'work/plan.json', path: 'work/plan.json', summary: plan.summary.slice(0, 80) });
       if (has('#branch') && t.branch_mode === 'manual' && plan.branch_questions.length) {
         this.emit(t.id, 'phase', { phase: 'waiting_input' }, '');
         this.release();

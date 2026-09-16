@@ -185,6 +185,12 @@ export const en: Record<string, string> = {
   'feed.filter.system': 'System',
   'feed.export': 'Export events (JSON)',
   'feed.exported': 'Exported events JSON',
+
+  'preview.title': 'Preview',
+  'preview.download': 'Download',
+  'preview.close': 'Close',
+  'preview.binary': 'Binary file — download to view:',
+  'preview.loading': 'Loading…',
   'feed.steerPh': 'Message (task not running — enters reply queue)',
   'feed.steerPh.active': 'Live guidance (steer — takes effect before the next LLM call)',
   'feed.hint.running': 'Running: messages are steered into the current run.',

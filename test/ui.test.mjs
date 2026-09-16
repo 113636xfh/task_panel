@@ -323,4 +323,32 @@ async function run3() {
   const expToast = await page.evaluate(() => document.querySelector('.toast')?.textContent ?? '');
   assert.ok(expToast.length > 0, '导出应有 toast');
   await shot('feed-exported');
+
+  // ===== 资产预览 =====
+  // 点工作产物里的 work/plan.json → 预览弹窗
+  const assetBtns = await page.$$('[data-testid="asset-name"]');
+  assert.ok(assetBtns.length >= 1, '完成态任务应有工作产物');
+  await page.click('[data-testid="asset-name"]');
+  await page.waitForSelector('[data-testid="asset-preview"]', { visible: true });
+  await page.waitForFunction(
+    () => (document.querySelector('[data-testid="asset-preview-body"]')?.textContent ?? '').includes('stub'),
+    { timeout: 8000 }
+  );
+  const pvText = await page.evaluate(() => document.querySelector('[data-testid="asset-preview-body"]').textContent);
+  assert.ok(pvText.includes('steps'), '预览应展示 plan.json 内容');
+  await shot('asset-preview');
+  // Esc 关闭
+  await page.keyboard.press('Escape');
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(
+    await page.evaluate(() => !!document.querySelector('[data-testid="asset-preview"]')),
+    false,
+    'Esc 应关闭预览'
+  );
+  // 再开一次 → 关闭按钮
+  await page.click('[data-testid="asset-name"]');
+  await page.waitForSelector('[data-testid="asset-preview"]', { visible: true });
+  await page.click('[data-testid="asset-preview-close"]');
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(await page.evaluate(() => !!document.querySelector('[data-testid="asset-preview"]')), false);
 }

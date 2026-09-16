@@ -51,9 +51,9 @@ export function emitEvent(taskId: string, kind: string, payload: unknown, action
   } else if (kind === 'review') {
     db.prepare('UPDATE tasks SET review_json=? WHERE id=?').run(JSON.stringify(payload), taskId);
   } else if (kind === 'asset') {
-    const a = payload as { kind: string; name: string; summary: string };
+    const a = payload as { kind: string; name: string; path?: string; summary: string };
     db.prepare('INSERT INTO task_assets (task_id, kind, name, path_or_url, summary, at) VALUES (?,?,?,?,?,?)').run(
-      taskId, a.kind ?? 'file', a.name, a.name, a.summary, ts
+      taskId, a.kind ?? 'file', a.name, a.path ?? a.name, a.summary, ts
     );
   }
 

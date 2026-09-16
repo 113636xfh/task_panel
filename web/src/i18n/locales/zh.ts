@@ -186,6 +186,12 @@ export const zh: Record<string, string> = {
   'feed.filter.system': '系统',
   'feed.export': '导出事件（JSON）',
   'feed.exported': '已导出事件 JSON',
+
+  'preview.title': '预览',
+  'preview.download': '下载',
+  'preview.close': '关闭',
+  'preview.binary': '二进制文件，请下载查看：',
+  'preview.loading': '加载中…',
   'feed.steerPh': '留言（任务未运行，进入回复队列）',
   'feed.steerPh.active': '实时指导（steer，下次 LLM 调用前生效）',
   'feed.hint.running': '运行中：消息会 steer 进当前执行。',

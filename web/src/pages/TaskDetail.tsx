@@ -27,12 +27,13 @@ import { api } from '../lib/api';
 import { onEvent } from '../lib/ws';
 import { fmtAgo, fmtDur, fmtTime } from '../lib/fmt';
 import { toast } from '../lib/toast';
+import AssetPreview from '../components/AssetPreview';
 import { MD } from '../lib/md';
 import { fileToBase64 } from '../lib/img';
 import { useI18n } from '../i18n';
 import type { BlockItem, Plan, Task, TaskEvent } from '../lib/types';
 
-function EvRow({ ev, plan, imgBase }: { ev: TaskEvent; plan: Plan | null; imgBase?: string }) {
+function EvRow({ ev, plan, imgBase, onPreview }: { ev: TaskEvent; plan: Plan | null; imgBase?: string; onPreview?: (f: { name: string; path: string }) => void }) {
   const { t } = useI18n();
   const p = ev.payload;
   const time = <span className="ev-t">{fmtTime(ev.ts)}</span>;
@@ -131,7 +132,22 @@ function EvRow({ ev, plan, imgBase }: { ev: TaskEvent; plan: Plan | null; imgBas
           {time}
           <FileText size={13} className="ev-ico" />
           <span className="ev-body">
-            {p.name} — {p.summary}
+            {onPreview && p.path ? (
+              <a
+                href="#"
+                className="a-link"
+                data-testid="asset-feed-link"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onPreview({ name: p.name, path: p.path });
+                }}
+              >
+                {p.name}
+              </a>
+            ) : (
+              p.name
+            )}{' '}
+            — {p.summary}
           </span>
         </div>
       );
@@ -158,6 +174,7 @@ export default function TaskDetail() {
   const [branchSel, setBranchSel] = useState<Record<string, string>>({});
   const [branchCustom, setBranchCustom] = useState<Record<string, string>>({});
   const [blockCustom, setBlockCustom] = useState('');
+  const [preview, setPreview] = useState<{ name: string; path: string } | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const lastSeq = useRef(0);
 
@@ -570,7 +587,7 @@ export default function TaskDetail() {
                 )}
                 {shownEvents.map((ev) => (
                   <div key={ev.seq} data-testid="ev">
-                    <EvRow ev={ev} plan={task.plan} imgBase={imgBase} />
+                    <EvRow ev={ev} plan={task.plan} imgBase={imgBase} onPreview={setPreview} />
                   </div>
                 ))}
               </div>
@@ -671,7 +688,18 @@ export default function TaskDetail() {
               {assets.map((a) => (
                 <div className="asset-row" key={a.id}>
                   <FileText size={13} className="ev-ico" />
-                  <span className="a-name">{a.name}</span>
+                  {a.path_or_url && !/^https?:/i.test(a.path_or_url) ? (
+                    <button
+                      className="a-name-link"
+                      data-testid="asset-name"
+                      title={t('preview.title')}
+                      onClick={() => setPreview({ name: a.name, path: a.path_or_url })}
+                    >
+                      {a.name}
+                    </button>
+                  ) : (
+                    <span className="a-name">{a.name}</span>
+                  )}
                   <span className="a-sum" title={a.summary}>
                     {a.summary}
                   </span>
@@ -693,6 +721,7 @@ export default function TaskDetail() {
           )}
         </div>
       </div>
+      {preview && <AssetPreview taskId={id} file={preview} onClose={() => setPreview(null)} />}
     </>
   );
 }
