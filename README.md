@@ -25,13 +25,25 @@ npm start            # 单端口 8787：API + WebSocket + 静态文件
 - **状态机**：`queued → planning → [waiting_input] → executing → [blocked] → testing → awaiting_confirm → done`（另有 interrupted / failed / cancelled）
 - **事件流**：每任务 seq 单调 + WS 断线按 `since` 重放
 
-## P1 核心闭环（当前）
+## P1 核心闭环
 
 看板列表 / 7+1 列看板 / 任务详情（打磨计划、分支回答、阻塞决策卡、验收、留言板 + 短留言 steer / 长提示词大编辑框 + 附图）/ 技能三级（全局只读 · 项目层继承 · 任务级手动安装）/ 设置（并发、分支策略、模型、全局系统提示词 + 历史）/ 双主题（Linear 风令牌，亮/暗）。
 
 **真实 pi 执行**（P1）：每任务一个 `pi --mode rpc` 子进程，在工作目录内自主完成「规划（work/plan.json + 分支问答）→ 执行（plan 驱动，block.json 即停）→ 测试（test_cmd 走 RPC bash）→ 独立验收官逐项判定（work/review.json，最多 3 次重试，用尽转人工）」；执行中可实时 steer（下次 LLM 调用前生效）；阻塞/分支决策由用户拍板后自动恢复（`switch_session` 全量上下文重放 + 决策注入）；长提示词/附图机制同 P0.5（docs/design/05-architecture.md §9/§10）。
 
-实测三条真实任务全链路通过：纯执行→done；分支 3 问 + 中途 steer 干预→done；执行中阻塞→用户拍板→带决策恢复→验收通过→done。P2 抢占/⌘K/恢复加固见 docs/design/06-roadmap.md。
+实测三条真实任务全链路通过：纯执行→done；分支 3 问 + 中途 steer 干预→done；执行中 block.json→用户拍板→带决策恢复→验收通过→done。
+
+## P2 抢占与体验（当前）
+
+- **优先级抢占**：槽位全满时，排队的 P0/P1 可抢占运行中的 P2/P3（stop runner + checkpoint + 自动断点恢复）；队列按 priority 排序。保守规则避免抖动。
+- **⌘K 命令面板**：Ctrl/⌘+K 打开；搜看板/任务（含 #num）/动作（导航、新建看板/任务、切主题/语言）；↑↓ 选择、↵ 执行、Esc 关闭；`?new=1` 让看板/任务页自动展开新建入口。
+- **事件流筛选/导出**：分组筛选（全部/消息/计划·执行/验收·阻塞/系统）+ 一键导出 JSON；前端直接消费 WS 事件（seq 去重，零额外请求）。
+- **资产预览**：点工作产物/事件流里的文件 → 弹窗查看（图片直渲、JSON/代码/Markdown 全文展示、二进制给下载）。
+- **服务重启恢复**：执行中任务转 interrupted + checkpoint，重启后自动断点恢复；优雅退出回收 pi 子进程。
+- **前缀缓存安全**：全局系统提示词固定在 `<workspace>/.pi/APPEND_SYSTEM.md`（system 消息位，跨任务共享前缀）；任务交互全部 append-only（switch_session = 字节级重放）。
+- **回归测试基建**：`npm test`（后端 15 项，stub 执行器 ~23s）/ `npm run test:ui`（puppeteer 人形 3 项）/ `npm run test:e2e`（真实 pi 冒烟）。
+
+P2 实现细节与提交点见 docs/design/06-roadmap.md。
 
 ## 测试
 
