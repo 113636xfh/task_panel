@@ -83,8 +83,19 @@ export function runtimeStats() {
 }
 
 // ---------------- 启动/恢复任务 ----------------
+// P3：把当前槽位状态写入 <workspace>/.pi/tp/slot-info（sub agent 软约束：agent 派生前自查）
+function writeSlotInfo(ws: string, taskId: string, title: string, busy: number, total: number) {
+  try {
+    const dir = path.join(ws, '.pi', 'tp');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'slot-info.json'), JSON.stringify({ busy, total, task: taskId, title, at: Date.now() }, null, 2));
+  } catch { /* 忽略 */ }
+}
+
 function onRelease(taskId: string) {
+  const row = db.prepare('SELECT workspace_path, title FROM tasks WHERE id=?').get(taskId) as { workspace_path: string; title: string } | undefined;
   runners.delete(taskId);
+  if (row) writeSlotInfo(row.workspace_path, taskId, row.title, runners.size, getSettings().concurrency);
   publish('runtime.slots', runtimeStats());
 }
 
@@ -97,7 +108,10 @@ function startTask(t: TaskRow) {
   // TP_EXECUTOR=stub 时走确定性 stub（测试用，毫秒级、无需 pi/模型服务）
   const runner: AnyRunner =
     process.env.TP_EXECUTOR === 'stub' ? new StubRunner(t, emitEvent, onRelease, settings) : new TaskRunner(t, emitEvent, onRelease, settings);
+  // P3：sub agent 软约束 —— 注入槽位状态（违反告警）+ 写入 slot-info
+  if (runner instanceof TaskRunner) runner.slotState = () => ({ busy: runners.size, total: settings.concurrency });
   runners.set(t.id, runner);
+  writeSlotInfo(t.workspace_path, t.id, t.title, runners.size, settings.concurrency);
 
   if (resume) {
     const plan = JSON.parse(t.plan_json!) as Plan;

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { db, getSettings } from './db.js';
 import { PiSession, type RpcEvent } from './executor.js';
 import { getPromptTpl, renderTemplate } from './prompts.js';
+import { fileURLToPath } from 'node:url';
 
 export type TaskRow = {
   id: string; board_id: string; num: number; title: string; description: string;
@@ -149,6 +150,18 @@ function judgePrompt(t: TaskRow, plan: Plan, testCmd: string, code: number | nul
  * trust.json/extensions，然后以 PI_CODING_AGENT_DIR 指向它 spawn pi。
  * 不修改用户全局 pi 配置，不影响 pi CLI。
  */
+// P3：安装 task_panel 可观测性扩展（项目级 <workspace>/.pi/extensions/tp-observability）。
+// 仅 TP_PANEL=1 时生效（任务子进程）；不动用户全局 agent 目录。
+function installObservability(ws: string) {
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const code = fs.readFileSync(path.join(here, 'tp-observability.ts'), 'utf8');
+    const dir = path.join(ws, '.pi', 'extensions', 'tp-observability');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'index.ts'), code, 'utf8');
+  } catch { /* 安装失败忽略（不影响主流程） */ }
+}
+
 function buildTaskAgentDir(ws: string, s: ReturnType<typeof getSettings>, cw: number): string {
   const base = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi', 'agent');
   const dir = path.join(ws, '.pi', `agent-task-${cw}`);
@@ -157,6 +170,11 @@ function buildTaskAgentDir(ws: string, s: ReturnType<typeof getSettings>, cw: nu
     try {
       fs.copyFileSync(path.join(base, f), path.join(dir, f));
     } catch { /* 源文件不存在则跳过 */ }
+  }
+  const agSrc = path.join(base, 'agents');
+  const agDst = path.join(dir, 'agents');
+  if (fs.existsSync(agSrc) && !fs.existsSync(agDst)) {
+    try { fs.cpSync(agSrc, agDst, { recursive: true }); } catch { /* ignore */ }
   }
   const extSrc = path.join(base, 'extensions');
   const extDst = path.join(dir, 'extensions');
@@ -232,6 +250,23 @@ export class TaskRunner {
   private lastTestAt = 0;
   /** 当前回合注入 prompt 的标签（全部模式下区分「系统注入」与用户消息）；user 消息消费后置空 */
   private promptTag = '';
+  /** P3：槽位状态提供（调度器注入；sub agent 违反软约束时告警） */
+  slotState?: () => { busy: number; total: number };
+  private spEmitted = false;
+
+  // P3：system prompt dump（pi 扩展在首次推理前写入）→ 事件流，全部模式顶栏用
+  private emitSystemPromptOnce() {
+    if (this.spEmitted) return;
+    try {
+      const p = path.join(this.t.workspace_path, '.pi', 'tp', 'system-prompt.md');
+      const text = fs.readFileSync(p, 'utf8');
+      if (text.trim()) {
+        this.spEmitted = true;
+        const cap = 1024 * 1024;
+        this.emit(this.t.id, 'system_prompt', { text: text.length > cap ? text.slice(0, cap) : text, truncated: text.length > cap });
+      }
+    } catch { /* 尚未生成 */ }
+  }
 
   constructor(
     private t: TaskRow,
@@ -298,6 +333,7 @@ export class TaskRunner {
     // P3 会话长度：任务级覆盖 > 全局默认；>0 时构建自包含 agent 目录（PI_CODING_AGENT_DIR）
     const cw = t.context_window > 0 ? t.context_window : Math.max(0, Number(s.contextWindow) || 0);
     const envExtra: Record<string, string> = { TP_PANEL: '1' };
+    installObservability(t.workspace_path);
     if (cw > 0) {
       try {
         envExtra.PI_CODING_AGENT_DIR = buildTaskAgentDir(t.workspace_path, s, cw);
@@ -326,6 +362,18 @@ export class TaskRunner {
           .join('\n')
           .trim();
         if (text) this.emit(t.id, 'assistant', { text: text.slice(0, 4000) });
+      }
+      // P3：sub agent 投影 + 槽位软约束违反告警
+      if (m?.role === 'assistant' && Array.isArray(m.content)) {
+        for (const c of m.content as any[]) {
+          if (c?.type === 'toolCall' && c.name === 'subagent') {
+            this.emit(t.id, 'subagent', { id: c.id ? String(c.id) : undefined, args: c.arguments ?? c.args ?? {} });
+            const st = this.slotState?.();
+            if (st && st.busy >= st.total) {
+              this.emit(t.id, 'system', { text: `⚠ 并发槽位已满（${st.busy}/${st.total}）仍在派生 subagent，可能资源竞争（软约束）` });
+            }
+          }
+        }
       }
       // P3 全部模式：投影完整消息（user/assistant/toolResult；user 带注入标签）
       if (m && (m.role === 'user' || m.role === 'assistant' || m.role === 'toolResult') && Array.isArray(m.content)) {
@@ -516,6 +564,8 @@ export class TaskRunner {
     const s = this.settings;
     this.promptTag = reworkMsgs.length ? 'rework' : 'planning';
     await this.promptWait(planPrompt(t, s, reworkMsgs), PLAN_TIMEOUT, '规划智能体审视任务并产出 work/plan.json');
+    // P3: system prompt dump 此时已生成（扩展在首次推理前写入）
+    this.emitSystemPromptOnce();
     if (this.released) return null;
     if (this.sess!.exited) {
       this.fail('pi 进程意外退出（规划阶段）', this.sess!.stderrTail);

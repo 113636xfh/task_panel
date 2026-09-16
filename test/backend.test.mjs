@@ -345,6 +345,7 @@ test('P3 全部模式：事件流含完整 message（注入标签/思考/工具�
   assert.ok(msgs.some((e) => e.payload.role === 'user' && e.payload.injected === '验收'), '验收注入');
   assert.ok(msgs.some((e) => e.payload.role === 'assistant' && e.payload.parts.some((p) => p.type === 'toolCall')), '工具调用');
   assert.ok(msgs.some((e) => e.payload.role === 'assistant' && e.payload.parts.some((p) => p.type === 'thinking')), '思考链');
+  assert.ok(evs.some((e) => e.kind === 'system_prompt' && e.payload.text.length > 0), 'system prompt dump 事件');
   const prog = evs.filter((e) => e.kind === 'progress');
   assert.ok(prog.length >= 2, 'progress 事件');
   const last = prog[prog.length - 1].payload;

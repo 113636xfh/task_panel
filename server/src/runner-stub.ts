@@ -88,6 +88,8 @@ export class StubRunner {
   async start(arg?: TaskRow) {
     if (arg) this.t = arg;
     const t = this.t;
+    // P3：stub 也投影 system prompt（供 UI/测试一致性）
+    this.emit(t.id, 'system_prompt', { text: `# stub system prompt（测试用）\n\n你是 Task Panel 的执行智能体…（stub 省略全量内容）`, truncated: false });
     const has = (m: string) => t.title.includes(m);
     let plan = basePlan(t);
     if (has('#branch')) {
