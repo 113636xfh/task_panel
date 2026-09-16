@@ -40,7 +40,8 @@ async function modelUp() {
       test_cmd: 'node -e "const s=require(\'fs\').existsSync(\'hello.txt\')?require(\'fs\').readFileSync(\'hello.txt\',\'utf8\').trim():null;process.exit(s===\'hello world\'?0:1)"',
       branch_mode: 'auto',
     });
-    console.log('任务已创建，等待真实 pi 完成（规划→执行→测试→验收），最长 15 分钟…');
+    console.log('任务已创建，手动启动（P3：创建后为 ready），等待真实 pi 完成（规划→执行→测试→验收），最长 15 分钟…');
+    await a.post(`/tasks/${t.id}/start`);
     const done = await waitForStatus(S.base, t.id, 'awaiting_confirm', TASK_TIMEOUT);
     console.log('达到待确认：', done.status, 'review.overall =', done.review?.overall);
     if (done.review?.overall !== 'pass') throw new Error('验收未通过（e2e 冒烟任务应 pass）');
