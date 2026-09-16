@@ -18,7 +18,9 @@ function connect() {
       const ev: BusEvent = JSON.parse(m.data);
       lastSeq = Math.max(lastSeq, ev.seq);
       for (const h of handlers) h(ev);
-    } catch { /* ignore */ }
+    } catch (e) {
+      console.error('[ws] handler error', e);
+    }
   };
   ws.onclose = () => {
     wsState.online = false;

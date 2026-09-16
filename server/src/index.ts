@@ -11,7 +11,7 @@ import { startScheduler, recoverOrphans } from './scheduler.js';
 const port = Number(process.env.TP_PORT ?? 8787);
 
 const app = express();
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '16mb' }));
 app.use('/api', api);
 
 // 静态文件（生产/预览）

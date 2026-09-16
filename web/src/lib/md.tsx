@@ -6,11 +6,16 @@ type Node =
   | { t: 'ul' | 'ol'; items: Inline[][] }
   | { t: 'pre'; code: string };
 
-type Inline = { t: 'text'; s: string } | { t: 'code'; s: string } | { t: 'bold'; s: string } | { t: 'a'; s: string; href: string };
+type Inline =
+  | { t: 'text'; s: string }
+  | { t: 'code'; s: string }
+  | { t: 'bold'; s: string }
+  | { t: 'a'; s: string; href: string }
+  | { t: 'img'; alt: string; src: string };
 
 function parseInline(s: string): Inline[] {
   const out: Inline[] = [];
-  const re = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)\s]+\))/g;
+  const re = /(\*\*[^*]+\*\*|`[^`]+`|!\[\[?[^\]]*\]\]?\([^)\s]+\)|\[[^\]]+\]\([^)\s]+\))/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(s))) {
@@ -18,9 +23,12 @@ function parseInline(s: string): Inline[] {
     const tok = m[0];
     if (tok.startsWith('**')) out.push({ t: 'bold', s: tok.slice(2, -2) });
     else if (tok.startsWith('`')) out.push({ t: 'code', s: tok.slice(1, -1) });
-    else {
-      const mm = tok.match(/\[([^\]]+)\]\(([^)\s]+)\)/)!;
-      out.push({ t: 'a', s: mm[1], href: mm[2] });
+    else if (tok.startsWith('![')) {
+      const mm = tok.match(/^!\[(?:\[(.*?)\]|(.*?))\]\(([^)\s]+)\)$/);
+      out.push({ t: 'img', alt: mm?.[1] ?? mm?.[2] ?? '', src: mm?.[3] ?? '' });
+    } else {
+      const mm = tok.match(/\[([^\]]+)\]\(([^)\s]+)\)/);
+      out.push({ t: 'a', s: mm?.[1] ?? tok, href: mm?.[2] ?? '' });
     }
     last = m.index + tok.length;
   }
@@ -28,12 +36,20 @@ function parseInline(s: string): Inline[] {
   return out;
 }
 
-function renderInline(nodes: Inline[], k: string | number) {
+function renderInline(nodes: Inline[], k: string | number, imgBase?: string) {
   return nodes.map((n, i) => {
     switch (n.t) {
       case 'bold': return <strong key={`${k}-${i}`}>{n.s}</strong>;
       case 'code': return <code key={`${k}-${i}`}>{n.s}</code>;
       case 'a': return <a key={`${k}-${i}`} href={n.href} target="_blank" rel="noreferrer">{n.s}</a>;
+      case 'img': {
+        const src = /^https?:/.test(n.src) || n.src.startsWith('/api/')
+          ? n.src
+          : imgBase
+            ? `${imgBase}?p=${encodeURIComponent(n.src)}`
+            : n.src;
+        return <img key={`${k}-${i}`} className="md-img" src={src} alt={n.alt} loading="lazy" />;
+      }
       default: return <span key={`${k}-${i}`}>{n.s}</span>;
     }
   });
@@ -64,6 +80,10 @@ function parseBlocks(text: string): Node[] {
       blocks.push({ t: 'ol', items });
     } else if (l.trim() === '') {
       i++;
+    } else if (/^!\[/.test(l.trim())) {
+      // 独立图片行（长提示词/反馈里的附图）单独成块
+      blocks.push({ t: 'p', children: parseInline(l) });
+      i++;
     } else {
       const para: string[] = [];
       while (i < lines.length && lines[i].trim() !== '' && !/^#{1,3}\s/.test(lines[i]) && !/^\s*[-*]\s+/.test(lines[i]) && !lines[i].trim().startsWith('```')) para.push(lines[i++]);
@@ -73,7 +93,7 @@ function parseBlocks(text: string): Node[] {
   return blocks;
 }
 
-export function MD({ text }: { text: string }) {
+export function MD({ text, imgBase }: { text: string; imgBase?: string }) {
   const blocks = useMemo(() => parseBlocks(text ?? ''), [text]);
   return (
     <div className="md">
@@ -81,12 +101,12 @@ export function MD({ text }: { text: string }) {
         switch (b.t) {
           case 'h': {
             const Tag = (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const)[Math.min(5, Math.max(0, b.level - 1))];
-            return <Tag key={i}>{renderInline(b.children, i)}</Tag>;
+            return <Tag key={i}>{renderInline(b.children, i, imgBase)}</Tag>;
           }
           case 'pre': return <pre key={i}>{b.code}</pre>;
-          case 'ul': return <ul key={i}>{b.items.map((it, j) => <li key={j}>{renderInline(it, `${i}-${j}`)}</li>)}</ul>;
-          case 'ol': return <ol key={i}>{b.items.map((it, j) => <li key={j}>{renderInline(it, `${i}-${j}`)}</li>)}</ol>;
-          default: return <p key={i}>{renderInline(b.children, i)}</p>;
+          case 'ul': return <ul key={i}>{b.items.map((it, j) => <li key={j}>{renderInline(it, `${i}-${j}`, imgBase)}</li>)}</ul>;
+          case 'ol': return <ol key={i}>{b.items.map((it, j) => <li key={j}>{renderInline(it, `${i}-${j}`, imgBase)}</li>)}</ol>;
+          default: return <p key={i}>{renderInline(b.children, i, imgBase)}</p>;
         }
       })}
     </div>

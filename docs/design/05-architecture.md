@@ -216,4 +216,44 @@ task_skills(id, task_id, name, source, installed_at)        -- 任务级项目�
 - 服务重启：从 `tasks`/`checkpoints` 恢复；`planning/executing/testing` 的孤儿任务按 `interrupted` 处理（session 文件在，可恢复）
 - pi 进程崩溃：stderr 尾部 + 退出码写入留言板（系统条），按重试策略处理
 - 测试命令超时：默认 10 分钟，超时视为不通过
-- 共享工作目录冲突：两个活跃任务同目录时，后启动者等待（调度器检查）并在 UI 显示"目录占用中"
+- 共享工作目录冲突：两个活跃任务同目录时，后启动者等待（调度器检查）并在 UI 显示“目录占用中”
+
+## 9. 长提示词与附图（P0.5）
+
+两类提示词输入：
+
+1. **短留言（steer）**：单行输入，任务运行中时经 pi RPC 实时注入（下一轮 LLM 调用前生效）；非运行时入队，恢复时合并进上下文。
+2. **长提示词**：展开大编辑框（多行），支持附图。创建任务与任务详情两处可用。
+
+### 9.1 图片存储与编号
+
+- 图片落到 **任务工作目录** `<workspace>/work/images/<num>.<ext>` —— 对 agent 天然可见（它就在自己的工程里）。
+- 编号 = 该目录现有最大编号 + 1；**不用 DB 表**，直接由目录列表推导（`GET /api/tasks/:id/images`）。
+- 上传走 base64 JSON（本地工具，不走 multipart）；express body 上限 16MB，单张上限 20MB。
+
+### 9.2 图文映射（核心约定）
+
+用户正文可用「图 N」自然语言引用附图。服务端在存入 description / 留言前，把附件自动追加为映射块：
+
+```
+[附图：正文可用“图 N”引用；agent 用 read 工具读取路径即可看到图片（多模态模型可直接看图）]
+![图 1](work/images/1.png)
+```
+
+- **UI 侧**：内置 MD 渲染器把 `![alt](src)` 渲染为图片（相对路径经 `GET /api/tasks/:id/file?p=` 解析，仅允许工作区内图片、拒绝 `..` 穿越）。
+- **agent 侧**：提示词里的映射块告诉它图片路径；多模态模型用 `read` 工具直接看图，纯文本模型也能拿到路径去处理（如 OCR/描述脚本）。
+- **agent 回传图片**：agent 把图存到 `work/` 后，在反馈/交付里写 `![[图 N 描述]](work/xxx.png)`，留言板按同一规则渲染（方括号 alt 兼容 markdown-it 风格）。
+
+### 9.3 API
+
+| 路由 | 说明 |
+|---|---|
+| `POST /api/tasks/:id/images` `{files:[{name,data(base64)}]}` → `{images, added}` | 上传图片，返回全量列表与本次新增项 |
+| `GET /api/tasks/:id/images` → `[{num,name,path}]` | 图片列表（目录推导） |
+| `GET /api/tasks/:id/file?p=work/images/1.png` | 工作区内图片安全访问（20MB 上限，仅图片 MIME） |
+
+创建任务 `POST /boards/:id/tasks` 与留言 `POST /tasks/:id/message` 均接受 `images`（base64 数组 / 编号数组），服务端自动追加映射块。
+
+### 9.4 与 pi CLI 的无干扰（再次确认）
+
+附图机制完全落在任务工作目录内（`work/images/`），不改任何 pi 全局配置、不动 `PI_CODING_AGENT_DIR`；pi CLI 单独使用与本插件互不影响。

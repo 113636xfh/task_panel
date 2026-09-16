@@ -1,12 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Plus, X, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Plus, X, RefreshCw, ImagePlus } from 'lucide-react';
 import { api } from '../lib/api';
 import { onEvent } from '../lib/ws';
 import { fmtDur, fmtTime, shortPath } from '../lib/fmt';
 import { toast } from '../lib/toast';
 import { useI18n } from '../i18n';
+import { fileToBase64 } from '../lib/img';
 import type { Task } from '../lib/types';
+
+const IMG_MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', bmp: 'image/bmp' };
+
+function dataUrl(name: string, data: string): string {
+  const ext = (name.slice(name.lastIndexOf('.') + 1) || 'png').toLowerCase();
+  return `data:${IMG_MIME[ext] ?? 'image/png'};base64,${data}`;
+}
 
 const COLS: { key: string; color: string; statuses: string[] }[] = [
   { key: 'queued', color: 'var(--st-queued)', statuses: ['queued', 'interrupted'] },
@@ -72,6 +80,25 @@ function NewTaskModal({
   const [extra, setExtra] = useState('');
   const [picked, setPicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [imgFiles, setImgFiles] = useState<{ name: string; data: string; url: string }[]>([]);
+  const imgInputRef = useRef<HTMLInputElement>(null);
+
+  async function pickImgs(files: FileList | null) {
+    if (!files?.length) return;
+    try {
+      const items = await Promise.all(
+        Array.from(files).map(async (f) => {
+          const { name, data } = await fileToBase64(f);
+          return { name, data, url: dataUrl(name, data) };
+        })
+      );
+      setImgFiles((prev) => [...prev, ...items]);
+    } catch {
+      toast(t('img.err'), 'err');
+    } finally {
+      if (imgInputRef.current) imgInputRef.current.value = '';
+    }
+  }
 
   async function submit() {
     if (!title.trim() || !desc.trim()) return toast(t('modal.missing'), 'err');
@@ -89,6 +116,7 @@ function NewTaskModal({
         test_cmd: testCmd.trim(),
         extra_prompt: extra.trim(),
         skills: picked.join(','),
+        images: imgFiles.map(({ name, data }) => ({ name, data })),
       });
       toast(t('modal.created'));
       onCreated();
@@ -117,6 +145,30 @@ function NewTaskModal({
           <div className="field">
             <label>{t('modal.desc')}</label>
             <textarea className="inp" rows={4} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={t('modal.descPh')} />
+          </div>
+          <div className="field">
+            <label className="m-img-label">
+              {t('modal.img')}
+              <button type="button" className="btn ghost sm" onClick={() => imgInputRef.current?.click()}>
+                <ImagePlus size={13} /> {t('img.attach')}
+              </button>
+            </label>
+            <input ref={imgInputRef} type="file" accept="image/*" multiple hidden onChange={(e) => pickImgs(e.target.files)} />
+            {imgFiles.length > 0 ? (
+              <div className="img-chips">
+                {imgFiles.map((im, i) => (
+                  <div key={i} className="img-chip" title={im.name}>
+                    <img src={im.url} alt={im.name} />
+                    <span className="n">{t('img.fig', { n: i + 1 })}</span>
+                    <button type="button" className="chip-x" onClick={() => setImgFiles((x) => x.filter((_, j) => j !== i))}>
+                      <X size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="steer-hint">{t('img.none')}</div>
+            )}
           </div>
 
           <div className="field">

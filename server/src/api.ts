@@ -12,6 +12,58 @@ import type { TaskRow } from './runner.js';
 export const api = express.Router();
 const json = (v: unknown) => JSON.parse(JSON.stringify(v ?? null));
 
+// ---------------- task images（长提示词附图：自动编号 + 引用 + 回传） ----------------
+const IMG_EXT: Record<string, string> = {
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp', '.gif': 'image/gif', '.bmp': 'image/bmp',
+};
+
+function workspaceOf(taskId: string): string | null {
+  const t = db.prepare('SELECT workspace_path FROM tasks WHERE id=?').get(taskId) as { workspace_path: string } | undefined;
+  return t?.workspace_path ?? null;
+}
+
+function listTaskImages(taskId: string): { num: number; name: string; path: string }[] {
+  const ws = workspaceOf(taskId);
+  if (!ws) return [];
+  const dir = path.join(ws, 'work', 'images');
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir)
+    .filter((f) => /^\d+\.(png|jpe?g|webp|gif|bmp)$/i.test(f))
+    .map((f) => ({ num: Number(f.match(/^(\d+)\./)![1]), name: f, path: `work/images/${f}` }))
+    .sort((a, b) => a.num - b.num);
+}
+
+function saveTaskImages(taskId: string, files: { name?: string; data?: string }[]): { num: number; name: string; path: string }[] {
+  const ws = workspaceOf(taskId);
+  if (!ws) throw new Error('task not found');
+  const dir = path.join(ws, 'work', 'images');
+  fs.mkdirSync(dir, { recursive: true });
+  let max = 0;
+  for (const f of fs.readdirSync(dir)) {
+    const m = f.match(/^(\d+)\./);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  const out: { num: number; name: string; path: string }[] = [];
+  for (const f of files.slice(0, 12)) {
+    const data = String((f as { data?: string })?.data ?? '');
+    if (!data || data.length < 32) continue;
+    const ext = (path.extname(String((f as { name?: string })?.name ?? '')) || '.png').toLowerCase().slice(0, 5);
+    if (!IMG_EXT[ext]) continue;
+    max += 1;
+    const rel = `work/images/${max}${ext}`;
+    fs.writeFileSync(path.join(ws, rel), Buffer.from(data, 'base64'));
+    out.push({ num: max, name: String((f as { name?: string })?.name ?? `image${max}${ext}`), path: rel });
+  }
+  return out;
+}
+
+function imageMapBlock(items: { num: number; path: string }[]): string {
+  if (!items.length) return '';
+  const lines = items.map((i) => `![图 ${i.num}](${i.path})`);
+  return `\n\n[附图：正文可用“图 N”引用；agent 用 read 工具读取路径即可看到图片（多模态模型可直接看图）]\n${lines.join('\n')}`;
+}
+
 function taskFromRow(t: TaskRow) {
   return {
     ...t,
@@ -131,6 +183,13 @@ api.post('/boards/:id/tasks', (req, res) => {
   for (const s of String(body.skills ?? '').split(',').map((x) => x.trim()).filter(Boolean)) {
     installToTask(id, dir, s, 'skill', 'global');
   }
+  // 长提示词附图：保存到工作区 work/images/，并把编号映射追加到描述
+  if (Array.isArray(body.images) && body.images.length) {
+    try {
+      const saved = saveTaskImages(id, body.images as { name?: string; data?: string }[]);
+      if (saved.length) db.prepare('UPDATE tasks SET description=? WHERE id=?').run(description + imageMapBlock(saved), id);
+    } catch { /* 图片失败不阻塞建任务 */ }
+  }
   emitEvent(id, 'system', { text: `任务已创建（#${num}），进入待打磨队列` });
   publish('task.created', { taskId: id, boardId: b.id, num });
   res.json({ id, num });
@@ -161,7 +220,41 @@ api.post('/tasks/:id/block-answer', (req, res) => res.json(answerBlock(req.param
 api.post('/tasks/:id/message', (req, res) => {
   const text = String(req.body?.text ?? '').trim();
   if (!text) return res.status(400).json({ error: '留言不能为空' });
-  res.json(messageTask(req.params.id, text));
+  let final = text;
+  const raw: unknown[] = Array.isArray(req.body?.images) ? (req.body.images as unknown[]) : [];
+  const nums = raw.map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0);
+  if (nums.length) {
+    const list = listTaskImages(req.params.id);
+    const items = nums.map((n) => list.find((i) => i.num === n)).filter(Boolean) as { num: number; path: string }[];
+    final = text + imageMapBlock(items);
+  }
+  res.json(messageTask(req.params.id, final));
+});
+
+// ---------------- task images ----------------
+api.post('/tasks/:id/images', (req, res) => {
+  const files = Array.isArray(req.body?.files) ? (req.body.files as { name?: string; data?: string }[]) : [];
+  try {
+    const saved = saveTaskImages(req.params.id, files);
+    if (!saved.length) return res.status(400).json({ error: '没有可保存的图片（支持 png/jpg/webp/gif/bmp）' });
+    res.json({ images: listTaskImages(req.params.id), added: saved });
+  } catch (e) {
+    res.status(400).json({ error: (e as Error)?.message ?? '保存失败' });
+  }
+});
+
+api.get('/tasks/:id/images', (req, res) => res.json({ images: listTaskImages(req.params.id) }));
+
+api.get('/tasks/:id/file', (req, res) => {
+  const ws = workspaceOf(req.params.id);
+  if (!ws) return res.status(404).json({ error: 'not found' });
+  const p = String(req.query?.p ?? '');
+  const root = path.resolve(ws);
+  const abs = path.resolve(root, p);
+  if (!abs.startsWith(root + path.sep) || !fs.existsSync(abs) || !fs.statSync(abs).isFile()) return res.status(404).json({ error: 'not found' });
+  if (fs.statSync(abs).size > 16 * 1024 * 1024) return res.status(413).json({ error: 'too large' });
+  res.type(IMG_EXT[path.extname(abs).toLowerCase()] ?? 'application/octet-stream');
+  fs.createReadStream(abs).pipe(res);
 });
 
 // ---------------- skills ----------------

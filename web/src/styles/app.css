@@ -566,3 +566,83 @@ input[type='range'] { accent-color: var(--accent); width: 110px; }
 .tcard .tc-interrupted { color: var(--st-planning); display: inline-flex; margin-right: 2px; }
 .task-head .ac-ico, .ac-title { display: flex; align-items: center; gap: 7px; }
 .alert-card .ac-title svg { flex: none; }
+
+/* ---------------- 长提示词附图 ---------------- */
+.md-img {
+  max-width: 100%;
+  border-radius: var(--r-sm, 6px);
+  border: 1px solid var(--line);
+  margin: 6px 0;
+  display: block;
+}
+.img-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.img-chip {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.img-chip > img {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg-2, var(--bg));
+}
+.img-chip .n {
+  font-size: 11px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+}
+.img-chip .chip-x {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--bg-2, var(--bg));
+  color: var(--text-2);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+}
+.img-chip .chip-x:hover {
+  color: var(--st-failed, #d33);
+  border-color: var(--st-failed, #d33);
+}
+.steer-long {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.steer-long-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.steer-long-head .sl-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  flex: 1;
+}
+.steer-long textarea {
+  resize: vertical;
+  min-height: 120px;
+  line-height: 1.55;
+}
+.m-img-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}

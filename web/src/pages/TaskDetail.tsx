@@ -16,16 +16,20 @@ import {
   Terminal,
   MessageSquare,
   GitBranch,
+  ImagePlus,
+  PanelBottomOpen,
+  PanelBottomClose,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { onEvent } from '../lib/ws';
 import { fmtAgo, fmtDur, fmtTime } from '../lib/fmt';
 import { toast } from '../lib/toast';
 import { MD } from '../lib/md';
+import { fileToBase64 } from '../lib/img';
 import { useI18n } from '../i18n';
 import type { BlockItem, Plan, Task, TaskEvent } from '../lib/types';
 
-function EvRow({ ev, plan }: { ev: TaskEvent; plan: Plan | null }) {
+function EvRow({ ev, plan, imgBase }: { ev: TaskEvent; plan: Plan | null; imgBase?: string }) {
   const { t } = useI18n();
   const p = ev.payload;
   const time = <span className="ev-t">{fmtTime(ev.ts)}</span>;
@@ -86,7 +90,7 @@ function EvRow({ ev, plan }: { ev: TaskEvent; plan: Plan | null }) {
       return (
         <div className="ev ev-user">
           <MessageSquare size={13} className="ev-ico" />
-          <span className="ev-body">{p.text}</span>
+          <span className="ev-body"><MD text={p.text} imgBase={imgBase} /></span>
           {time}
         </div>
       );
@@ -135,6 +139,10 @@ export default function TaskDetail() {
   const [blocks, setBlocks] = useState<BlockItem[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
   const [msg, setMsg] = useState('');
+  const [longMode, setLongMode] = useState(false);
+  const [draftImgs, setDraftImgs] = useState<{ num: number; name: string; path: string }[]>([]);
+  const imgFileRef = useRef<HTMLInputElement>(null);
+  const imgBase = `/api/tasks/${id}/file`;
   const [branchSel, setBranchSel] = useState<Record<string, string>>({});
   const [branchCustom, setBranchCustom] = useState<Record<string, string>>({});
   const [blockCustom, setBlockCustom] = useState('');
@@ -185,10 +193,25 @@ export default function TaskDetail() {
     const txt = msg.trim();
     if (!txt) return;
     try {
-      await api.message(id, txt);
+      await api.message(id, txt, draftImgs.map((i) => i.num));
       setMsg('');
+      setDraftImgs([]);
+      setLongMode(false);
     } catch (e: any) {
       toast(e.message, 'err');
+    }
+  }
+
+  async function pickImgs(files: FileList | null) {
+    if (!files?.length) return;
+    try {
+      const b64 = await Promise.all(Array.from(files).map(fileToBase64));
+      const r = await api.uploadImages(id, b64);
+      setDraftImgs((prev) => [...prev, ...r.added]);
+    } catch (e: any) {
+      toast(t('img.err'), 'err');
+    } finally {
+      if (imgFileRef.current) imgFileRef.current.value = '';
     }
   }
 
@@ -292,7 +315,7 @@ export default function TaskDetail() {
           <div className="ac-title">
             <OctagonAlert size={14} /> {t('block.title')}
           </div>
-          <MD text={openBlock.question} />
+          <MD text={openBlock.question} imgBase={imgBase} />
           <div className="ctx-box">
             <span>
               <span className="k">{t('block.ctx.now')}</span>
@@ -430,7 +453,7 @@ export default function TaskDetail() {
           <div className="card">
             <div className="card-h">{t('card.desc')}</div>
             <div className="card-b">
-              <MD text={task.description} />
+              <MD text={task.description} imgBase={imgBase} />
             </div>
           </div>
 
@@ -445,7 +468,7 @@ export default function TaskDetail() {
                 )}
               </div>
               <div className="card-b">
-                <MD text={task.plan.summary} />
+                <MD text={task.plan.summary} imgBase={imgBase} />
                 <div style={{ marginTop: 10 }}>
                   {task.plan.steps.map((s, i) => {
                     const active =
@@ -477,23 +500,69 @@ export default function TaskDetail() {
                   <div style={{ color: 'var(--text-3)', fontSize: 12.5, textAlign: 'center', padding: 18 }}>{t('feed.empty')}</div>
                 )}
                 {events.map((ev) => (
-                  <EvRow key={ev.seq} ev={ev} plan={task.plan} />
+                  <EvRow key={ev.seq} ev={ev} plan={task.plan} imgBase={imgBase} />
                 ))}
               </div>
               <div style={{ padding: '0 14px 13px' }}>
-                <div className="steer-row">
-                  <input
-                    className="inp"
-                    placeholder={running ? t('feed.steerPh.active') : t('feed.steerPh')}
-                    value={msg}
-                    onChange={(e) => setMsg(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && sendMsg()}
-                  />
-                  <button className="btn primary" onClick={sendMsg}>
-                    <Send size={13} /> {t('feed.send')}
-                  </button>
-                </div>
-                <div className="steer-hint">{running ? t('feed.hint.running') : t('feed.hint.inactive')}</div>
+                {longMode ? (
+                  <div className="steer-long">
+                    <div className="steer-long-head">
+                      <span className="sl-title">{t('feed.long.title')}</span>
+                      <button className="btn ghost sm" title={t('img.attach')} onClick={() => imgFileRef.current?.click()}>
+                        <ImagePlus size={14} /> {t('img.attach')}
+                      </button>
+                      <input ref={imgFileRef} type="file" accept="image/*" multiple hidden onChange={(e) => pickImgs(e.target.files)} />
+                      <button className="btn ghost sm" title={t('feed.collapse')} onClick={() => setLongMode(false)}>
+                        <PanelBottomClose size={14} />
+                      </button>
+                    </div>
+                    <textarea
+                      className="inp"
+                      rows={8}
+                      placeholder={t('feed.steerPh.long')}
+                      value={msg}
+                      onChange={(e) => setMsg(e.target.value)}
+                    />
+                    {draftImgs.length > 0 && (
+                      <div className="img-chips">
+                        {draftImgs.map((im) => (
+                          <div key={im.num} className="img-chip" title={im.name}>
+                            <img src={api.fileUrl(id, im.path)} alt={im.name} />
+                            <span className="n">{t('img.fig', { n: im.num })}</span>
+                            <button className="chip-x" onClick={() => setDraftImgs((x) => x.filter((y) => y.num !== im.num))}>
+                              <X size={11} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="steer-hint">{t('img.hint')}</div>
+                    <div className="steer-row">
+                      <button className="btn primary" onClick={sendMsg} disabled={!msg.trim()}>
+                        <Send size={13} /> {t('feed.send')}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="steer-row">
+                      <input
+                        className="inp"
+                        placeholder={running ? t('feed.steerPh.active') : t('feed.steerPh')}
+                        value={msg}
+                        onChange={(e) => setMsg(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && sendMsg()}
+                      />
+                      <button className="btn ghost sm" title={t('feed.expand')} onClick={() => setLongMode(true)}>
+                        <PanelBottomOpen size={14} />
+                      </button>
+                      <button className="btn primary" onClick={sendMsg} disabled={!msg.trim()}>
+                        <Send size={13} /> {t('feed.send')}
+                      </button>
+                    </div>
+                    <div className="steer-hint">{running ? t('feed.hint.running') : t('feed.hint.inactive')}</div>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -545,7 +614,7 @@ export default function TaskDetail() {
             <div className="card">
               <div className="card-h">{t('card.acceptanceText')}</div>
               <div className="card-b">
-                <MD text={task.acceptance_text} />
+                <MD text={task.acceptance_text} imgBase={imgBase} />
               </div>
             </div>
           )}

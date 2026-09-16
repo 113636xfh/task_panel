@@ -20,7 +20,12 @@ export const api = {
   blockAnswer: (id: string, answer: string) => req(`/api/tasks/${id}/block-answer`, { method: 'POST', body: JSON.stringify({ answer }) }),
   confirm: (id: string) => req(`/api/tasks/${id}/confirm`, { method: 'POST' }),
   cancel: (id: string) => req(`/api/tasks/${id}/cancel`, { method: 'POST' }),
-  message: (id: string, text: string) => req(`/api/tasks/${id}/message`, { method: 'POST', body: JSON.stringify({ text }) }),
+  message: (id: string, text: string, images?: number[]) => req(`/api/tasks/${id}/message`, { method: 'POST', body: JSON.stringify({ text, images }) }),
+  // task images（长提示词附图）
+  uploadImages: (id: string, files: { name: string; data: string }[]) =>
+    req<{ images: { num: number; name: string; path: string }[]; added: { num: number; name: string; path: string }[] }>(`/api/tasks/${id}/images`, { method: 'POST', body: JSON.stringify({ files }) }),
+  listImages: (id: string) => req<{ images: { num: number; name: string; path: string }[] }>(`/api/tasks/${id}/images`),
+  fileUrl: (id: string, p: string) => `/api/tasks/${id}/file?p=${encodeURIComponent(p)}`,
 
   skills: () => req<any>('/api/skills'),
   installSkill: (taskId: string, name: string, kind: string, source: string) =>
