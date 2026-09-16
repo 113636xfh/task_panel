@@ -185,14 +185,15 @@ api.post('/boards/:id/tasks', (req, res) => {
   const id = uid('t');
   const at = Date.now();
   const prio = Math.min(3, Math.max(0, Number(body.priority ?? 2)));
+  const cw = Math.min(10_000_000, Math.max(0, Math.round(Number(body.context_window ?? 0)) || 0));
   db.prepare(
     `INSERT INTO tasks (id, board_id, num, title, description, priority, status, created_at, workspace_path,
-       branch_mode, branch_timeout_min, acceptance_text, test_cmd, extra_prompt)
-     VALUES (?,?,?,?,?,?,'queued',?,?,?,?,?,?,?)`
+       branch_mode, branch_timeout_min, acceptance_text, test_cmd, extra_prompt, context_window)
+     VALUES (?,?,?,?,?,?,'ready',?,?,?,?,?,?,?,?)`
   ).run(id, b.id, num, title, description, prio, at, dir,
     body.branch_mode === 'auto' ? 'auto' : 'manual',
     Number(body.branch_timeout_min ?? settings.branchTimeoutMin),
-    String(body.acceptance ?? ''), String(body.test_cmd ?? ''), String(body.extra_prompt ?? ''));
+    String(body.acceptance ?? ''), String(body.test_cmd ?? ''), String(body.extra_prompt ?? ''), cw);
   for (const s of String(body.skills ?? '').split(',').map((x) => x.trim()).filter(Boolean)) {
     installToTask(id, dir, s, 'skill', 'global');
   }
@@ -203,9 +204,48 @@ api.post('/boards/:id/tasks', (req, res) => {
       if (saved.length) db.prepare('UPDATE tasks SET description=? WHERE id=?').run(description + imageMapBlock(saved), id);
     } catch { /* 图片失败不阻塞建任务 */ }
   }
-  emitEvent(id, 'system', { text: `任务已创建（#${num}），进入待打磨队列` });
+  emitEvent(id, 'system', { text: `任务已创建（#${num}），待准备：不占槽位、不排队，点「开始」进入打磨队列` });
   publish('task.created', { taskId: id, boardId: b.id, num });
   res.json({ id, num });
+});
+
+// P3：待准备 → 手动开始（进入打磨队列）
+api.post('/tasks/:id/start', (req, res) => {
+  const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(req.params.id) as TaskRow | undefined;
+  if (!t) return res.status(404).json({ error: 'not found' });
+  if (t.status !== 'ready') return res.status(400).json({ error: `只有「待准备」状态可开始（当前：${t.status}）` });
+  db.prepare("UPDATE tasks SET status='queued' WHERE id=?").run(t.id);
+  emitEvent(t.id, 'system', { text: '已手动开始：进入打磨队列' });
+  publish('task.status', { taskId: t.id, to: 'queued', from: 'ready' });
+  res.json({ ok: true });
+});
+
+// P3：返工——完成/待确认任务写留言（可附图）→ 打回打磨（复用原会话，不限次数）
+api.post('/tasks/:id/rework', (req, res) => {
+  const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(req.params.id) as TaskRow | undefined;
+  if (!t) return res.status(404).json({ error: 'not found' });
+  if (t.status !== 'done' && t.status !== 'awaiting_confirm') {
+    return res.status(400).json({ error: `只有已完成/待确认任务可返工（当前：${t.status}）` });
+  }
+  const text = String(req.body?.text ?? '').trim();
+  if (!text) return res.status(400).json({ error: '请填写返工意见' });
+  let final = text;
+  const nums = (Array.isArray(req.body?.images) ? (req.body.images as unknown[]) : [])
+    .map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0);
+  if (nums.length) {
+    const list = listTaskImages(t.id);
+    const items = nums.map((n) => list.find((i) => i.num === n)).filter(Boolean) as { num: number; path: string }[];
+    final += imageMapBlock(items);
+  }
+  // 清理本轮协议文件：重新打磨要重写 plan.json
+  for (const f of ['plan.json', 'done.json', 'review.json', 'block.json']) {
+    try { fs.unlinkSync(path.join(t.workspace_path, 'work', f)); } catch { /* ignore */ }
+  }
+  db.prepare('INSERT INTO task_user_msgs (task_id, text, at) VALUES (?,?,?)').run(t.id, final, Date.now());
+  db.prepare("UPDATE tasks SET status='queued', plan_json=NULL, current_action='' WHERE id=?").run(t.id);
+  emitEvent(t.id, 'system', { text: '已打回打磨：用户返工反馈已记录，重新规划（同会话）' });
+  publish('task.status', { taskId: t.id, to: 'queued', from: t.status });
+  res.json({ ok: true });
 });
 
 api.patch('/tasks/:id', (req, res) => {
@@ -218,6 +258,7 @@ api.patch('/tasks/:id', (req, res) => {
   if (typeof b.description === 'string' && b.description.trim()) patch.description = b.description.trim();
   if (typeof b.extra_prompt === 'string') patch.extra_prompt = b.extra_prompt;
   if (typeof b.test_cmd === 'string') patch.test_cmd = b.test_cmd;
+  if (typeof b.context_window === 'number') patch.context_window = Math.min(10_000_000, Math.max(0, Math.round(b.context_window)));
   if (Object.keys(patch).length) {
     const sets = Object.keys(patch).map((k) => `${k}=?`).join(',');
     db.prepare(`UPDATE tasks SET ${sets} WHERE id=?`).run(...(Object.values(patch) as (string | number)[]), t.id);
@@ -301,6 +342,13 @@ api.put('/settings', (req, res) => {
   if (typeof b.execModel === 'string' && b.execModel.trim()) patch.execModel = b.execModel.trim();
   if (typeof b.planMaxTokens === 'number') patch.planMaxTokens = b.planMaxTokens;
   if (typeof b.workspacesBase === 'string' && b.workspacesBase.trim()) patch.workspacesBase = b.workspacesBase.trim();
+  if (typeof b.contextWindow === 'number') patch.contextWindow = Math.min(10_000_000, Math.max(0, Math.round(b.contextWindow)));
+  if (b.promptTemplates && typeof b.promptTemplates === 'object' && !Array.isArray(b.promptTemplates)) {
+    const t = b.promptTemplates as Record<string, unknown>;
+    const out: Record<string, string> = {};
+    for (const k of ['plan', 'exec', 'judge', 'rework']) if (typeof t[k] === 'string') out[k] = t[k] as string;
+    if (Object.keys(out).length) patch.promptTemplates = out;
+  }
   setSettings(patch);
   publish('settings.changed', {});
   res.json({ ok: true, ...getSettings() });

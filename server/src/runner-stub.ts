@@ -101,6 +101,9 @@ export class StubRunner {
     }
     this.later(STEP_MS, async () => {
       this.writeWorkFile('plan.json', plan);
+      // P3 全部模式：投影完整会话（stub 简化版：注入 prompt + 助手消息）
+      this.emit(t.id, 'message', { role: 'user', injected: '规划', parts: [{ type: 'text', text: `# 任务\n${t.title}\n（stub 规划注入 prompt，省略）` }] });
+      this.emit(t.id, 'message', { role: 'assistant', parts: [{ type: 'thinking', text: '审视任务描述：检查模糊点、缺失约束与风险…（grade me）' }, { type: 'text', text: `已审视任务「${t.title}」，计划已写入 work/plan.json。` }] });
       this.emit(t.id, 'planned', plan, '');
       this.emit(t.id, 'asset', { kind: 'plan', name: 'work/plan.json', path: 'work/plan.json', summary: plan.summary.slice(0, 80) });
       if (has('#branch') && t.branch_mode === 'manual' && plan.branch_questions.length) {
@@ -118,6 +121,10 @@ export class StubRunner {
     if (pendingMsgs.length) this.emit(this.t.id, 'system', { text: `恢复执行；已合入 ${pendingMsgs.length} 条排队留言（stub）` });
     for (const s of plan.steps) if (s.done) this.emit(this.t.id, 'step', { id: s.id, done: true });
     this.emit(this.t.id, 'system', { text: '恢复执行（断点续跑，stub）' });
+    // P3：恢复/返工也投影消息 + 进度
+    const doneN = plan.steps.filter((x) => x.done).length;
+    this.emit(this.t.id, 'message', { role: 'user', injected: '恢复', parts: [{ type: 'text', text: `# 继续执行任务（stub 恢复注入，省略）${pendingMsgs.length ? `\n# 用户补充留言\n${pendingMsgs.map((m) => '> ' + m).join('\n')}` : ''}` }] });
+    this.emit(this.t.id, 'progress', { done: doneN, total: plan.steps.length, current: plan.steps.find((x) => !x.done)?.title ?? '全部步骤已完成' });
     const answeredBlock = db.prepare(
       "SELECT answer FROM task_blocks WHERE task_id=? AND status='answered' ORDER BY id DESC LIMIT 1"
     ).get(this.t.id) as { answer: string } | undefined;
@@ -134,9 +141,14 @@ export class StubRunner {
       "SELECT 1 FROM task_blocks WHERE task_id=? AND status IN ('open','answered') LIMIT 1"
     ).get(t.id);
     this.emit(t.id, 'phase', { phase: 'executing' }, '▸ 按计划执行');
+    // P3 一行进度 + 全部模式消息
+    this.emit(t.id, 'progress', { done: 0, total: plan.steps.length, current: plan.steps[0]?.title ?? '' });
+    this.emit(t.id, 'message', { role: 'user', injected: '执行', parts: [{ type: 'text', text: `# 继续执行任务：${t.title}\n（stub 执行注入 prompt，省略）` }] });
     this.later(STEP_MS, async () => {
       this.emit(t.id, 'step', { id: 's1', done: true });
       plan.steps[0].done = true;
+      this.emit(t.id, 'progress', { done: 1, total: plan.steps.length, current: plan.steps[1]?.title ?? '全部步骤已完成' });
+      this.emit(t.id, 'message', { role: 'assistant', parts: [{ type: 'toolCall', name: 'bash', args: '{\n  "command": "stub 自检"\n}' }, { type: 'text', text: '步骤 1 完成，已写回 work/plan.json。' }] });
       if (willBlock) {
         const block = {
           question: 'stub 阻塞：缺少关键决策 X',
@@ -174,6 +186,7 @@ export class StubRunner {
     const t = this.t;
     const first = db.prepare('SELECT retry_count FROM tasks WHERE id=?').get(t.id) as { retry_count: number };
     const willFailFirst = t.title.includes('#fail') && first.retry_count === 0;
+    this.emit(t.id, 'message', { role: 'user', injected: '验收', parts: [{ type: 'text', text: `# 验收判定（stub 验收注入，省略）` }] });
     this.emit(t.id, 'phase', { phase: 'testing' }, `▸ 验收：${t.test_cmd || '无测试命令，仅 LLM 判定（stub）'}`);
     this.later(STEP_MS, async () => {
       if (t.test_cmd) this.emit(t.id, 'tool', { name: 'bash', summary: `▸ bash: ${t.test_cmd}`, result: '✓ 通过（stub）' });

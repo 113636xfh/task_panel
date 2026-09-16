@@ -124,7 +124,7 @@ export function makeTaskPayload(o = {}) {
     title, description = '自动化测试任务。', priority = 0,
     wsName = `t${Math.random().toString(36).slice(2, 9)}`,
     branchMode = 'manual', acceptance = '自动测试验收项', testCmd = '',
-    images = [],
+    images = [], contextWindow = 0,
   } = o;
   return {
     title, description, priority,
@@ -133,7 +133,20 @@ export function makeTaskPayload(o = {}) {
     acceptance: acceptance ?? '',
     test_cmd: testCmd ?? '',
     images,
+    context_window: contextWindow,
   };
+}
+
+/** 创建任务（P3：默认状态 ready，不占槽不排队） */
+export async function createTask(a, boardId, payload) {
+  return a.post(`/boards/${boardId}/tasks`, payload);
+}
+
+/** 创建并立即开始（P3：ready → start → 进入队列） */
+export async function createAndStart(a, boardId, payload) {
+  const t = await a.post(`/boards/${boardId}/tasks`, payload);
+  await a.post(`/tasks/${t.id}/start`);
+  return t;
 }
 
 /** 1x1 透明 PNG（base64） */

@@ -26,7 +26,15 @@ export const DEFAULT_SETTINGS = {
   workspacesBase: path.join(ROOT, 'workspaces'),
   systemPrompt: '',
   promptUpdatedAt: null as number | null,
+  // P3：会话长度（contextWindow，tokens）；0 = 沿用 models.json 的模型默认值。>0 时为任务构建独立 agent 目录覆盖
+  contextWindow: 0,
 };
+
+// P3 迁移：tasks.context_window（0 = 跟随全局默认；>0 = 该任务单独覆盖）
+{
+  const cols = (db.prepare('PRAGMA table_info(tasks)').all() as { name: string }[]).map((c) => c.name);
+  if (!cols.includes('context_window')) db.exec('ALTER TABLE tasks ADD COLUMN context_window INTEGER NOT NULL DEFAULT 0');
+}
 
 export function getSettings() {
   const rows = db.prepare('SELECT key, value_json FROM settings').all() as { key: string; value_json: string }[];
@@ -34,8 +42,8 @@ export function getSettings() {
   for (const r of rows) {
     try {
       const v = JSON.parse(r.value_json);
-      if (v && typeof v === 'object' && !Array.isArray(v)) Object.assign(out, v);
-      else out[r.key] = v;
+      // 每行就是一个 key 的完整值（标量或对象，如 promptTemplates）
+      out[r.key] = v;
     } catch { /* ignore */ }
   }
   return out as typeof DEFAULT_SETTINGS & Record<string, unknown>;

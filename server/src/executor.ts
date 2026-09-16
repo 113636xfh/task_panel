@@ -29,7 +29,7 @@ export class PiSession {
   private settledWaiters: { resolve: (v: boolean) => void; timer: NodeJS.Timeout }[] = [];
   private exitResolve: (() => void) | null = null;
 
-  constructor(private cwd: string, private extraArgs: string[] = []) {}
+  constructor(private cwd: string, private extraArgs: string[] = [], private envExtra: Record<string, string> = {}) {}
 
   onEvent(cb: (ev: RpcEvent) => void) {
     this.eventCb = cb;
@@ -41,7 +41,8 @@ export class PiSession {
       cwd: this.cwd,
       shell: isWin, // Windows: pi 是 .cmd shim，需经 shell 解析
       windowsHide: true,
-      env: process.env,
+      // P3：任务级 agent 目录（PI_CODING_AGENT_DIR）覆盖 contextWindow 等，不动用户全局 pi 配置
+      env: { ...process.env, ...this.envExtra },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     this.child.stdout?.on('data', (d: Buffer) => {

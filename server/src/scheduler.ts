@@ -48,6 +48,12 @@ export function emitEvent(taskId: string, kind: string, payload: unknown, action
       const s = plan.steps?.find((x) => x.id === (payload as { id: string }).id);
       if (s) { s.done = true; db.prepare('UPDATE tasks SET plan_json=? WHERE id=?').run(JSON.stringify(plan), taskId); }
     }
+  } else if (kind === 'progress') {
+    // P3 看板一行进度（执行/验收阶段：当前在第几步）
+    const p = payload as { done: number; total: number; current: string };
+    if (p && typeof p.total === 'number') {
+      db.prepare('UPDATE tasks SET current_action=? WHERE id=?').run(`${p.done}/${p.total} · ${p.current}`, taskId);
+    }
   } else if (kind === 'review') {
     db.prepare('UPDATE tasks SET review_json=? WHERE id=?').run(JSON.stringify(payload), taskId);
   } else if (kind === 'asset') {
@@ -69,6 +75,7 @@ export function runtimeStats() {
     used: runners.size,
     total: s.concurrency,
     queue: cnt('queued') + cnt('interrupted'),
+    ready: cnt('ready'),
     waiting: cnt('waiting_input'),
     blocked: cnt('blocked'),
     awaiting: cnt('awaiting_confirm'),
