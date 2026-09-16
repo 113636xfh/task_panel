@@ -553,3 +553,16 @@ input[type='range'] { accent-color: var(--accent); width: 110px; }
 .md a { color: var(--accent-hi); text-decoration: underline; }
 
 @media (max-width: 1100px) { .task-body { grid-template-columns: 1fr; } }
+
+/* —— i18n / 图标（Lucide） —— */
+.ev-ico { vertical-align: -2px; margin: 0 3px 0 0; color: var(--text-3); flex: none; }
+.ev-step .ev-ico { color: var(--st-done); }
+.ev-block .ev-ico { color: var(--st-blocked); }
+.ev-user .ev-ico { color: var(--accent); }
+.asset-row .ev-ico { vertical-align: -3px; margin: 0 7px 0 0; }
+.meta-ico { display: inline-flex; align-items: center; gap: 5px; }
+.meta-ico svg { flex: none; }
+.topbar .lang-label { font-size: 11px; font-weight: 650; margin-left: 4px; }
+.tcard .tc-interrupted { color: var(--st-planning); display: inline-flex; margin-right: 2px; }
+.task-head .ac-ico, .ac-title { display: flex; align-items: center; gap: 7px; }
+.alert-card .ac-title svg { flex: none; }
