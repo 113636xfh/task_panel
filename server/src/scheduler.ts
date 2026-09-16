@@ -3,8 +3,17 @@ import path from 'node:path';
 import { db, getSettings, DEFAULT_SETTINGS } from './db.js';
 import { publish } from './bus.js';
 import { TaskRunner, type TaskRow, type Plan } from './runner.js';
+import { StubRunner } from './runner-stub.js';
 
-const runners = new Map<string, TaskRunner>();
+/** 真实/ stub 执行器的公共接口（private 成员不参与结构化比较） */
+export type AnyRunner = {
+  start(t: TaskRow): Promise<void>;
+  resume(t: TaskRow, plan: Plan, answers: Record<string, string>, pendingMsgs: string[]): Promise<void>;
+  steer(text: string): void;
+  stop(): void;
+};
+
+const runners = new Map<string, AnyRunner>();
 const runtimers: NodeJS.Timeout[] = [];
 
 // ---------------- 事件落库 + 广播 ----------------
@@ -78,7 +87,9 @@ function startTask(t: TaskRow) {
   emitEvent(t.id, 'system', { text: resume ? '恢复执行（断点续跑）' : '任务进入打磨阶段（规划智能体已启动，短上下文）' });
   emitEvent(t.id, 'phase', { phase: resume ? 'executing' : 'planning' }, resume ? '▸ 恢复中' : '▸ 打磨中');
 
-  const runner = new TaskRunner(t, emitEvent, onRelease, settings);
+  // TP_EXECUTOR=stub 时走确定性 stub（测试用，毫秒级、无需 pi/模型服务）
+  const runner: AnyRunner =
+    process.env.TP_EXECUTOR === 'stub' ? new StubRunner(t, emitEvent, onRelease, settings) : new TaskRunner(t, emitEvent, onRelease, settings);
   runners.set(t.id, runner);
 
   if (resume) {

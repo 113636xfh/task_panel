@@ -79,6 +79,13 @@ function taskFull(id: string) {
 }
 
 // ---------------- boards ----------------
+api.get('/health', (_req, res) => res.json({
+  ok: true,
+  executor: process.env.TP_EXECUTOR === 'stub' ? 'stub' : 'pi',
+  uptime: Math.round(process.uptime()),
+  runtime: runtimeStats(),
+}));
+
 api.get('/boards', (_req, res) => {
   const boards = db.prepare('SELECT * FROM boards ORDER BY created_at').all() as { id: string; name: string; created_at: number }[];
   const stats = db.prepare('SELECT board_id, COUNT(*) total, SUM(status IN (\'planning\',\'executing\',\'testing\')) active, SUM(status=\'done\') done FROM tasks GROUP BY board_id').all() as any[];
@@ -102,6 +109,12 @@ api.post('/boards', (req, res) => {
   db.prepare('INSERT INTO boards (id, name, created_at) VALUES (?,?,?)').run(id, name, Date.now());
   publish('boards.changed', {});
   res.json({ id });
+});
+
+api.get('/boards/:id', (req, res) => {
+  const b = db.prepare('SELECT * FROM boards WHERE id=?').get(req.params.id);
+  if (!b) return res.status(404).json({ error: 'not found' });
+  res.json(b);
 });
 
 api.delete('/boards/:id', (req, res) => {

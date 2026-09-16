@@ -33,10 +33,23 @@ npm start            # 单端口 8787：API + WebSocket + 静态文件
 
 实测三条真实任务全链路通过：纯执行→done；分支 3 问 + 中途 steer 干预→done；执行中阻塞→用户拍板→带决策恢复→验收通过→done。P2 抢占/⌘K/恢复加固见 docs/design/06-roadmap.md。
 
+## 测试
+
+三层测试，由快到慢；日常回归跑前两层（秒级，无需 pi/模型服务）：
+
+| 命令 | 内容 | 依赖 |
+| --- | --- | --- |
+| `npm test` | 后端 API 套件（node:test）：全生命周期 / 分支(手动+自动) / 阻塞决策 / 验收重试 / steer+留言 / 附图+防穿越 / 取消 / WS 实时+重放 / 重启恢复 / settings 钳制，14 项 | 无（stub 执行器，毫秒级） |
+| `npm run test:ui` | UI 人形测试（puppeteer-core 驱动本机 Edge/Chrome）：建看板→建任务→分支逐题回答→确认→卡片入 done 列；steer 短/长留言、主题/语言切换；16 张截图在 `test/ui-artifacts/` | 本机浏览器（可用 `TP_BROWSER` 指定） |
+| `npm run test:e2e` | 真实 pi + 真实模型服务的全链路冒烟（hello.txt 任务，验收+交付物落盘检查）；模型服务不可达时自动跳过 | pi 已登录 + vLLM 在线 |
+
+后端测试用 `TP_EXECUTOR=stub` 起服务：`server/src/runner-stub.ts` 是确定性执行器（接口与真实 TaskRunner 一致），任务标题带标记切换剧本：`#branch` 分支问答 / `#block` 阻塞决策 / `#fail` 验收重试 / `#slow` 拉长执行窗口（steer/取消/重启）。改完代码后 `npm test && npm run test:ui` 即可回归。
+
 ## 目录
 
 ```
-server/src/   db(schema) · bus(WS) · api(REST) · scheduler(状态机) · executor(PiSession, pi --mode rpc 封装) · runner(任务执行器: 规划/执行/阻塞/测试/验收/恢复) · skills(三级扫描/安装) · index(入口)
+server/src/   db(schema) · bus(WS) · api(REST) · scheduler(状态机) · executor(PiSession, pi --mode rpc 封装) · runner(任务执行器: 规划/执行/阻塞/测试/验收/恢复) · runner-stub(测试用确定性执行器) · skills(三级扫描/安装) · index(入口)
 web/src/      styles(tokens+app) · lib(api/ws/md/img/fmt) · i18n(zh/en) · components(Layout) · pages(Boards/BoardDetail/TaskDetail/Skills/Settings)
+test/         helpers(起服/api/WS 基建) · backend.test(后端套件) · ui.test(UI 人形) · e2e-pi(真实冒烟)
 docs/design/  设计文档包（00-06）
 ```

@@ -58,6 +58,7 @@ export default function Boards() {
           <>
             <input
               className="inp"
+              data-testid="input-board-name"
               style={{ width: 220 }}
               placeholder={t('boards.newPh')}
               autoFocus
@@ -65,7 +66,7 @@ export default function Boards() {
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && submit()}
             />
-            <button className="btn primary" onClick={submit}>
+            <button className="btn primary" data-testid="btn-create-board" onClick={submit}>
               {t('boards.create')}
             </button>
             <button className="btn ghost" onClick={() => setCreating(false)}>
@@ -73,7 +74,7 @@ export default function Boards() {
             </button>
           </>
         ) : (
-          <button className="btn primary" onClick={() => setCreating(true)}>
+          <button className="btn primary" data-testid="btn-new-board" onClick={() => setCreating(true)}>
             <Plus size={14} /> {t('boards.newBtn')}
           </button>
         )}
@@ -90,7 +91,7 @@ export default function Boards() {
       ) : (
         <div className="board-grid">
           {boards.map((b) => (
-            <div key={b.id} className="board-card" onClick={() => nav(`/boards/${b.id}`)}>
+            <div key={b.id} className="board-card" data-testid="board-card" onClick={() => nav(`/boards/${b.id}`)}>
               <button
                 className="bc-del"
                 title={t('boards.delete')}

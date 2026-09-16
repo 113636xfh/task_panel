@@ -31,7 +31,7 @@ function TaskCard({ t, onOpen }: { t: Task; onOpen: () => void }) {
   const { t: tx } = useI18n();
   const running = ['planning', 'executing', 'testing'].includes(t.status);
   return (
-    <div className={`tcard st-${t.status}`} onClick={onOpen}>
+    <div className={`tcard st-${t.status}`} data-testid="task-card" data-num={t.num} data-status={t.status} onClick={onOpen}>
       <div className="tc-top">
         <span className="tc-num">#{t.num}</span>
         {t.status === 'interrupted' && (
@@ -140,11 +140,11 @@ function NewTaskModal({
         <div className="m-b">
           <div className="field">
             <label>{t('modal.title')}</label>
-            <input className="inp" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('modal.titlePh')} />
+            <input className="inp" data-testid="input-task-title" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('modal.titlePh')} />
           </div>
           <div className="field">
             <label>{t('modal.desc')}</label>
-            <textarea className="inp" rows={4} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={t('modal.descPh')} />
+            <textarea className="inp" data-testid="input-task-desc" rows={4} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={t('modal.descPh')} />
           </div>
           <div className="field">
             <label className="m-img-label">
@@ -180,6 +180,7 @@ function NewTaskModal({
               {wsMode === 'fresh' && (
                 <input
                   className="inp"
+                  data-testid="input-ws-name"
                   style={{ marginLeft: 23 }}
                   value={wsName}
                   onChange={(e) => setWsName(e.target.value)}
@@ -274,7 +275,7 @@ function NewTaskModal({
           <button className="btn" onClick={onClose}>
             {t('boards.cancel')}
           </button>
-          <button className="btn primary" disabled={busy} onClick={submit}>
+          <button className="btn primary" data-testid="btn-create-task" disabled={busy} onClick={submit}>
             {busy ? t('modal.creating') : t('modal.submit')}
           </button>
         </div>
@@ -339,14 +340,14 @@ export default function BoardDetail() {
           {tasks.length} {t('boards.card.tasks')}
         </span>
         <span style={{ flex: 1 }} />
-        <button className="btn primary" onClick={() => setShowNew(true)}>
+        <button className="btn primary" data-testid="btn-new-task" onClick={() => setShowNew(true)}>
           <Plus size={14} /> {t('board.newTask')}
         </button>
       </div>
 
       <div className="kanban">
         {COLS.map((c) => (
-          <div key={c.key} className={`kcol ${c.key}`}>
+          <div key={c.key} className={`kcol ${c.key}`} data-testid={`col-${c.key}`}>
             <div className="kcol-h">
               <span className="cdot" style={{ background: c.color }} />
               {t(`col.${c.key}`)}

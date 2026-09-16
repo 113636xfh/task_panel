@@ -163,8 +163,11 @@ export default function TaskDetail() {
     api
       .events(id, since)
       .then((rows) => {
-        if (since === 0) setEvents(rows);
-        else setEvents((x) => [...x, ...rows.filter((r) => r.seq > lastSeq.current)]);
+        if (!rows.length) return;
+        // 先在当前时刻算出新增行，再推进 lastSeq（函数式更新器在渲染时才执行，
+        // 若把 filter 放在更新器内，会读到已被推进的 lastSeq 从而把整批新行全部过滤掉）
+        const fresh = since === 0 ? rows : rows.filter((r) => r.seq > lastSeq.current);
+        if (fresh.length) setEvents((x) => (since === 0 ? rows : [...x, ...fresh]));
         lastSeq.current = Math.max(lastSeq.current, ...rows.map((r) => r.seq));
       })
       .catch(() => {});
@@ -265,7 +268,7 @@ export default function TaskDetail() {
           </span>{' '}
           {task.title}
         </h1>
-        <span className={`badge st-${task.status}`}>
+        <span className={`badge st-${task.status}`} data-testid="status-badge">
           <span className="dot" />
           {t(`status.${task.status}`)}
         </span>
@@ -349,7 +352,7 @@ export default function TaskDetail() {
           </div>
           <div className="opt-list">
             {openBlock.options.map((o, i) => (
-              <button key={i} className="opt-btn" onClick={() => submitBlock(o.label)}>
+              <button key={i} className="opt-btn" data-testid="block-opt" data-idx={i} onClick={() => submitBlock(o.label)}>
                 <span className="o-label">
                   {String.fromCharCode(65 + i)}. {o.label}
                   {openBlock.recommended && String.fromCharCode(65 + i) === openBlock.recommended && (
@@ -372,7 +375,7 @@ export default function TaskDetail() {
               onChange={(e) => setBlockCustom(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && blockCustom.trim() && submitBlock(blockCustom.trim())}
             />
-            <button className="btn primary" disabled={!blockCustom.trim()} onClick={() => submitBlock(blockCustom.trim())}>
+            <button className="btn primary" data-testid="btn-block-submit" disabled={!blockCustom.trim()} onClick={() => submitBlock(blockCustom.trim())}>
               {t('block.submit')}
             </button>
           </div>
@@ -394,6 +397,9 @@ export default function TaskDetail() {
                   <button
                     key={i}
                     className={`opt-btn ${branchSel[q.id] === o.label ? 'on' : ''}`}
+                    data-testid="branch-opt"
+                    data-q={q.id}
+                    data-idx={i}
                     onClick={() => setBranchSel((s) => ({ ...s, [q.id]: o.label }))}
                   >
                     <span className="o-label">
@@ -413,7 +419,7 @@ export default function TaskDetail() {
             </div>
           ))}
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button className="btn primary" onClick={submitBranch}>
+            <button className="btn primary" data-testid="btn-branch-submit" onClick={submitBranch}>
               {t('branch.submit')}
             </button>
           </div>
@@ -438,6 +444,7 @@ export default function TaskDetail() {
           </div>
           <button
             className="btn primary big"
+            data-testid="btn-confirm-done"
             onClick={() => api.confirm(id).then(() => {
               toast(t('act.confirmed'));
               reloadTask();
@@ -504,7 +511,7 @@ export default function TaskDetail() {
               {t('feed.title')} <span style={{ marginLeft: 'auto', fontWeight: 400, color: 'var(--text-3)' }}>{t('feed.count', { n: events.length })}</span>
             </div>
             <div className="card-b tight">
-              <div className="feed" ref={feedRef}>
+              <div className="feed" data-testid="feed" ref={feedRef}>
                 {events.length === 0 && (
                   <div style={{ color: 'var(--text-3)', fontSize: 12.5, textAlign: 'center', padding: 18 }}>{t('feed.empty')}</div>
                 )}
@@ -527,6 +534,7 @@ export default function TaskDetail() {
                     </div>
                     <textarea
                       className="inp"
+                      data-testid="input-msg-long"
                       rows={8}
                       placeholder={t('feed.steerPh.long')}
                       value={msg}
@@ -547,7 +555,7 @@ export default function TaskDetail() {
                     )}
                     <div className="steer-hint">{t('img.hint')}</div>
                     <div className="steer-row">
-                      <button className="btn primary" onClick={sendMsg} disabled={!msg.trim()}>
+                      <button className="btn primary" data-testid="btn-msg-send-long" onClick={sendMsg} disabled={!msg.trim()}>
                         <Send size={13} /> {t('feed.send')}
                       </button>
                     </div>
@@ -557,15 +565,16 @@ export default function TaskDetail() {
                     <div className="steer-row">
                       <input
                         className="inp"
+                        data-testid="input-msg-short"
                         placeholder={running ? t('feed.steerPh.active') : t('feed.steerPh')}
                         value={msg}
                         onChange={(e) => setMsg(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && sendMsg()}
                       />
-                      <button className="btn ghost sm" title={t('feed.expand')} onClick={() => setLongMode(true)}>
+                      <button className="btn ghost sm" data-testid="btn-msg-expand" title={t('feed.expand')} onClick={() => setLongMode(true)}>
                         <PanelBottomOpen size={14} />
                       </button>
-                      <button className="btn primary" onClick={sendMsg} disabled={!msg.trim()}>
+                      <button className="btn primary" data-testid="btn-msg-send-short" onClick={sendMsg} disabled={!msg.trim()}>
                         <Send size={13} /> {t('feed.send')}
                       </button>
                     </div>

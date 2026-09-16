@@ -136,6 +136,7 @@ export default function Layout() {
           <span className="ver-tag">P1 · {t('topbar.executor')}</span>
           <button
             className="btn ghost sm"
+            data-testid="btn-lang"
             title="English / 简体中文"
             onClick={() => setLocale(locale === 'zh' ? 'en' : 'zh')}
           >
@@ -144,6 +145,7 @@ export default function Layout() {
           </button>
           <button
             className="btn ghost sm"
+            data-testid="btn-theme"
             title={theme === 'dark' ? 'Switch to light' : '切换到暗色'}
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
           >
