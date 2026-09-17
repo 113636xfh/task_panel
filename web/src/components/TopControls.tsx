@@ -35,7 +35,7 @@ export default function TopControls() {
   useEffect(() => {
     const apply = () => {
       const lvl = localStorage.getItem('tp-fs') ?? 'm';
-      const f = lvl === 's' ? 0.94 : lvl === 'l' ? 1.06 : 1;
+      const f = lvl === 's' ? 1.0 : lvl === 'l' ? 1.12 : 1.06;
       const k = Math.min(window.innerWidth / 1440, window.innerHeight / 900);
       const z = Math.min(1.5, Math.max(0.75, k)) * f;
       document.documentElement.style.setProperty('--app-zoom', z.toFixed(3));
