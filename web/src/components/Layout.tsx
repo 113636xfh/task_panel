@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { SquareKanban, Wrench, Settings2, Moon, Sun, Globe, Type, History as HistIcon, FolderKanban } from 'lucide-react';
+import { SquareKanban, Wrench, Settings2, History as HistIcon, FolderKanban } from 'lucide-react';
 import { onEvent, wsState } from '../lib/ws';
 import { api } from '../lib/api';
 import type { Project, Runtime } from '../lib/types';
 import { useI18n } from '../i18n';
 import CommandPalette from './CommandPalette';
+import TopControls from './TopControls';
 
 const TITLES: [RegExp, string][] = [
   [/^\/p\/[^/]+\/tasks/, 'crumb.task'],
@@ -40,12 +41,11 @@ function Toasts() {
 }
 
 export default function Layout() {
-  const { locale, setLocale, t } = useI18n();
+  const { t } = useI18n();
   const loc = useLocation();
   const nav = useNavigate();
   const [rt, setRt] = useState<Runtime | null>(null);
   const [online, setOnline] = useState(wsState.online);
-  const [theme, setTheme] = useState(localStorage.getItem('tp-theme') ?? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
   const [projects, setProjects] = useState<Project[]>([]);
 
   const loadProjects = () => api.projects().then(setProjects).catch(() => {});
@@ -55,25 +55,6 @@ export default function Layout() {
       if (ev.kind === 'boards.changed' || ev.kind === 'task.created' || ev.kind === 'task.status') loadProjects();
     });
   }, []);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem('tp-theme', theme);
-  }, [theme]);
-
-  // 设置页切换主题时同步顶栏按钮（避免两处状态漂移）
-  useEffect(() => {
-    const h = () => setTheme(localStorage.getItem('tp-theme') ?? 'dark');
-    window.addEventListener('tp-theme-apply', h);
-    return () => window.removeEventListener('tp-theme-apply', h);
-  }, []);
-
-  // P3：字体大小（S/M/L，循环切换；#root zoom 整体缩放）
-  const [fs, setFs] = useState(localStorage.getItem('tp-fs') ?? 'm');
-  useEffect(() => {
-    document.documentElement.dataset.fs = fs;
-    localStorage.setItem('tp-fs', fs);
-  }, [fs]);
 
   useEffect(() => {
     const off = onEvent((ev) => {
@@ -184,38 +165,15 @@ export default function Layout() {
       </aside>
 
       <div className="main">
-        <header className="topbar">
-          <span className="title">{t(titleKey)}</span>
-          <span className="crumb">{loc.pathname}</span>
-          <span className="spacer" />
-          <span className="ver-tag">P3 · {t('topbar.executor')}</span>
-          <button
-            className="btn ghost sm"
-            data-testid="btn-lang"
-            title="English / 简体中文"
-            onClick={() => setLocale(locale === 'zh' ? 'en' : 'zh')}
-          >
-            <Globe size={13} />
-            <span className="lang-label">{locale === 'zh' ? 'EN' : '中文'}</span>
-          </button>
-          <button
-            className="btn ghost sm"
-            data-testid="btn-fontsize"
-            title={t('topbar.fontsize')}
-            onClick={() => setFs(fs === 'm' ? 'l' : fs === 'l' ? 's' : 'm')}
-          >
-            <Type size={13} />
-            <span className="lang-label">{fs.toUpperCase()}</span>
-          </button>
-          <button
-            className="btn ghost sm"
-            data-testid="btn-theme"
-            title={theme === 'dark' ? 'Switch to light' : '切换到暗色'}
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          >
-            {theme === 'dark' ? <Sun size={13} /> : <Moon size={13} />}
-          </button>
-        </header>
+        {/* 任务详情页隐藏顶栏（控件并入详情第一行，4 行压 2 行） */}
+        {!/^\/p\/.*\/tasks\//.test(loc.pathname) && (
+          <header className="topbar">
+            <span className="title">{t(titleKey)}</span>
+            <span className="crumb">{loc.pathname}</span>
+            <span className="spacer" />
+            <TopControls />
+          </header>
+        )}
         <div className="content">
           <Outlet />
         </div>

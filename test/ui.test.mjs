@@ -144,12 +144,17 @@ async function run1() {
   await waitStatus('done', 10_000);
   await shot('task-done');
 
-  // 9. 返回首页：卡片应位于 done 列
+  // 9. 已完成任务：首页隐藏；项目看板显示（底部行）
   await page.goto(`${S.base}/boards`, { waitUntil: 'networkidle0' });
+  assert.equal(await page.$$eval('[data-testid="task-row"]', (els) => els.length), 0, '首页应隐藏已完成任务');
+  const tasksAll = await page.evaluate(async () => (await (await fetch('/api/tasks/all')).json()));
+  const projName = (tasksAll[0]?.workspace_path || '').split(/[\\/]/).filter(Boolean).pop();
+  assert.ok(projName, '应能拿到项目名');
+  await page.goto(`${S.base}/p/${encodeURIComponent(projName)}`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('[data-testid="task-row"][data-status="done"][data-num="1"]', { visible: true });
   const doneRowCount = await page.$$eval('[data-testid="task-row"][data-status="done"]', (els) => els.length);
   assert.equal(doneRowCount, 1);
-  await shot('card-in-done-col');
+  await shot('card-in-done-row');
 }
 
 test('UI 人形：steer 留言 + 长文展开 + 主题/语言切换', async () => {
@@ -221,7 +226,13 @@ async function run2() {
     () => document.querySelector('[data-testid="status-badge"]')?.className.includes('st-done') ?? false,
     { timeout: 10_000 }
   );
+  // 首页隐藏已完成 → 去该项目看板确认 done 行
   await page.goto(`${S.base}/boards`, { waitUntil: 'networkidle0' });
+  const all2 = await page.evaluate(async () => (await (await fetch('/api/tasks/all')).json()));
+  const slow = all2.find((x) => x.title === SLOW);
+  assert.ok(slow, '应找到 slow 任务');
+  const slowProj = (slow.workspace_path || '').split(/[\\/]/).filter(Boolean).pop();
+  await page.goto(`${S.base}/p/${encodeURIComponent(slowProj)}`, { waitUntil: 'networkidle0' });
   await page.waitForFunction(
     (t) => {
       const el = [...document.querySelectorAll('[data-testid="task-row"]')].find((e) => (e.textContent ?? '').includes(t));

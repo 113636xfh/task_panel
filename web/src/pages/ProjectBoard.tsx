@@ -80,7 +80,7 @@ export default function ProjectBoard() {
       {tasks.length === 0 ? (
         <div className="empty">{t('tbl.empty')}</div>
       ) : (
-        <KanbanBoard tasks={tasks} dataTestid="kanban-board" />
+        <KanbanBoard tasks={tasks} dataTestid="kanban-board" showDone showProj={false} />
       )}
 
       {showNew && <NewTaskModal defaultWs={defaultWs} skills={skills} onClose={() => setShowNew(false)} onCreated={loadTasks} />}

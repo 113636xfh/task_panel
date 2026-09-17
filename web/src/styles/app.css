@@ -1113,29 +1113,27 @@ input[type='number'].num-inp { min-width: 110px; }
   background: var(--bg-2, rgba(127,127,127,0.04));
 }
 
-/* --- 四阶段看板（小方框卡片；无文件路径；按项目分组） --- */
+/* --- 四阶段看板 · 行布局：一行一个任务（横向分割线），卡片落在所属阶段列；行序=执行顺序（先优先级再时间），已完成恒在底部；P 级在行头 --- */
 @keyframes spin360 { to { transform: rotate(360deg); } }
 .spin { animation: spin360 1s linear infinite; }
-.kb {
-  display: flex; gap: 12px; align-items: stretch;
+.kb2 {
   flex: 1; min-height: 0;
-}
-.kb-col {
-  flex: 1; min-width: 0;
-  display: flex; flex-direction: column;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: color-mix(in srgb, var(--text) 2.5%, transparent);
-  min-height: 280px;
+  padding: 0 12px;
 }
-.kb-col-h {
+.kb2-head {
+  display: grid; grid-template-columns: 52px repeat(4, minmax(0, 1fr)); gap: 10px;
+  padding: 9px 0 8px;
+  border-bottom: 1px solid var(--line-strong);
+}
+.kb2-colh {
   display: flex; align-items: center; gap: 7px;
-  padding: 9px 12px;
-  font-size: 12.5px; font-weight: 700;
-  color: var(--text-2);
-  border-bottom: 1px solid var(--line);
+  font-size: 12.5px; font-weight: 700; color: var(--text-2);
+  min-width: 0;
 }
-.kb-dot { width: 7px; height: 7px; border-radius: 50%; }
+.kb-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .kb-dot[data-col='wait'] { background: var(--st-ready); }
 .kb-dot[data-col='plan'] { background: var(--st-planning); }
 .kb-dot[data-col='exec'] { background: var(--st-executing); }
@@ -1147,18 +1145,28 @@ input[type='number'].num-inp { min-width: 110px; }
   padding: 0 7px; border-radius: 999px;
   background: color-mix(in srgb, var(--text) 8%, transparent);
 }
-.kb-col-b {
-  flex: 1;
-  padding: 10px 10px 12px;
-  display: flex; flex-direction: column; gap: 10px;
+.kb2-row {
+  display: grid; grid-template-columns: 52px repeat(4, minmax(0, 1fr)); gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  align-items: start;
 }
-.kb-empty { color: var(--text-3); font-size: 12px; text-align: center; padding: 18px 0; }
-.kb-group { display: flex; flex-direction: column; gap: 7px; }
-.kb-group-h {
-  font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em;
-  text-transform: uppercase;
+.kb2-row:last-of-type { border-bottom: none; }
+.kb2-pri {
+  font-family: var(--font-mono); font-size: 11.5px; font-weight: 600;
   color: var(--text-3);
-  padding-left: 2px;
+  border: 1px solid var(--line-strong); border-radius: 999px;
+  text-align: center; padding: 2.5px 0;
+  height: 22px;
+}
+.kb2-pri.p0 { color: var(--st-blocked); border-color: color-mix(in srgb, var(--st-blocked) 50%, transparent); }
+.kb2-pri.p1 { color: var(--st-executing); }
+.kb2-cell { min-width: 0; }
+.kb-empty { color: var(--text-3); font-size: 12px; text-align: center; padding: 42px 0; }
+.kc-proj {
+  font-size: 11px; font-weight: 600; color: var(--text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 150px; flex: none;
 }
 /* 小方框卡片（v1 风格）+ 颜色纪律：红=阻塞/失败 橙=等用户 冷=自治 灰=等待 绿=完成 */
 .kcard {
@@ -1321,6 +1329,13 @@ input[type='number'].num-inp { min-width: 110px; }
   min-height: 0;
 }
 .td-side .tabs { margin-bottom: 10px; padding-top: 2px; }
+/* 验收确认卡：侧边栏顶部（不占主列） */
+.td-side-confirm {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--st-ready) 3%, transparent);
+}
+.td-side-confirm .alert-card { margin: 0; }
 @media (max-width: 1100px) { .td-side { width: 300px; } }
 @media (max-width: 900px) { .td-side { display: none; } }
 

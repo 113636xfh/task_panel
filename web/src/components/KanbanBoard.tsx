@@ -14,7 +14,7 @@ const COLS: { key: string; statuses: TaskStatus[] }[] = [
   { key: 'test', statuses: ['testing', 'awaiting_confirm', 'done'] },
 ];
 
-// 项目名 = 工作目录的最后一段（分组 key；卡片上不再显示完整路径）
+// 项目名 = 工作目录的最后一段（跨项目看板上的卡片标注；不再显示完整路径）
 const baseName = (p: string) => (p || '').split(/[\\/]/).filter(Boolean).pop() || '—';
 
 // 颜色纪律：红=阻塞/失败；橙=等用户（待准备/待答/待确认）；冷色=agent 自治；绿=完成
@@ -44,7 +44,7 @@ function progressLine(t: Task): string {
 
 const SPIN = new Set(['planning', 'executing', 'testing']);
 
-function KCard({ t, onNav }: { t: Task; onNav: () => void }) {
+function KCard({ t, onNav, showProj }: { t: Task; onNav: () => void; showProj?: boolean }) {
   const { t: tx } = useI18n();
   const prog = progressLine(t);
   return (
@@ -58,8 +58,8 @@ function KCard({ t, onNav }: { t: Task; onNav: () => void }) {
     >
       <div className="kc-line1">
         <span className="kc-num">#{t.num}</span>
+        {showProj && <span className="kc-proj">{baseName(t.workspace_path)}</span>}
         <span className="kc-title">{t.title}</span>
-        <span className={`prio p${t.priority}`}>P{t.priority}</span>
       </div>
       <div className="kc-line2">
         <span className={`pill s-${t.status}`}>
@@ -112,64 +112,73 @@ function KCard({ t, onNav }: { t: Task; onNav: () => void }) {
   );
 }
 
+// P3 看板 · 行布局：
+// - 一行一个任务（横向分割线），卡片落在它所属的阶段列，其余列留空
+// - 行序 = 执行顺序（先优先级 P0 优先，再创建时间）；已完成的任务无论优先级都放最下面的行
+// - P 级在行头（左列），不再占用卡片
 export default function KanbanBoard({
   tasks,
   dataTestid = 'kanban',
+  showDone = false,
+  showProj = true,
 }: {
   tasks: Task[];
   dataTestid?: string;
+  /** 项目看板传 true：显示该项目已完成任务（首页隐藏已完成） */
+  showDone?: boolean;
+  /** 卡片上是否标注项目名（跨项目看板需要；单项目看板可关） */
+  showProj?: boolean;
 }) {
   const { t } = useI18n();
   const nav = useNavigate();
 
-  const byProject = useMemo(() => {
-    const m = new Map<string, Task[]>();
-    for (const x of tasks) {
-      if (x.status === 'failed' || x.status === 'cancelled') continue; // 终态失败/取消 → 历史页
-      const key = baseName(x.workspace_path);
-      if (!m.has(key)) m.set(key, []);
-      m.get(key)!.push(x);
-    }
-    for (const list of m.values()) list.sort((a, b) => a.priority - b.priority || a.num - b.num);
-    return m;
-  }, [tasks]);
+  const rows = useMemo(() => {
+    const visible = tasks.filter((x) => {
+      if (x.status === 'failed' || x.status === 'cancelled') return false; // 终态失败/取消 → 历史页
+      if (x.status === 'done' && !showDone) return false; // 首页隐藏已完成
+      return true;
+    });
+    const active = visible
+      .filter((x) => x.status !== 'done')
+      .sort((a, b) => a.priority - b.priority || a.created_at - b.created_at);
+    const done = visible
+      .filter((x) => x.status === 'done')
+      .sort((a, b) => (a.finished_at ?? a.created_at) - (b.finished_at ?? b.created_at));
+    return [...active, ...done]; // 已完成恒定在底部
+  }, [tasks, showDone]);
 
-  const colTasks = (key: string) => {
-    const col = COLS.find((c) => c.key === key)!;
-    const out: { group: string; items: Task[] }[] = [];
-    for (const [group, list] of byProject) {
-      const items = list.filter((x) => col.statuses.includes(x.status));
-      if (items.length) out.push({ group, items });
-    }
-    return out;
-  };
+  const go = (x: Task) =>
+    nav(`/p/${encodeURIComponent(baseName(x.workspace_path))}/tasks/${x.id}`);
 
   return (
-    <div className="kb" data-testid={dataTestid}>
-      {COLS.map((col) => {
-        const groups = colTasks(col.key);
-        const total = groups.reduce((n, g) => n + g.items.length, 0);
-        return (
-          <div className="kb-col" key={col.key}>
-            <div className="kb-col-h">
+    <div className="kb2" data-testid={dataTestid}>
+      <div className="kb2-head">
+        <span className="kb2-gutter" />
+        {COLS.map((col) => {
+          const n = rows.filter((x) => col.statuses.includes(x.status)).length;
+          return (
+            <div className="kb2-colh" key={col.key}>
               <span className="kb-dot" data-col={col.key} />
               {t(`phase.${col.key}`)}
-              <span className="kb-count">{total}</span>
+              <span className="kb-count">{n}</span>
             </div>
-            <div className="kb-col-b">
-              {total === 0 && <div className="kb-empty">{t('tbl.empty')}</div>}
-              {groups.map((g) => (
-                <div className="kb-group" key={g.group}>
-                  <div className="kb-group-h">{g.group}</div>
-                  {g.items.map((x) => (
-                    <KCard key={x.id} t={x} onNav={() => nav(`/p/${encodeURIComponent((x.workspace_path || '').split(/[\\/]/).filter(Boolean).pop() || '—')}/tasks/${x.id}`)} />
-                  ))}
-                </div>
-              ))}
-            </div>
+          );
+        })}
+      </div>
+      {rows.map((x) => {
+        const ci = COLS.findIndex((c) => c.statuses.includes(x.status));
+        return (
+          <div className="kb2-row" key={x.id}>
+            <span className={`kb2-pri p${x.priority}`}>P{x.priority}</span>
+            {COLS.map((col, i) => (
+              <div className="kb2-cell" key={col.key}>
+                {ci === i && <KCard t={x} onNav={() => go(x)} showProj={showProj} />}
+              </div>
+            ))}
           </div>
         );
       })}
+      {rows.length === 0 && <div className="kb-empty">{t('tbl.empty')}</div>}
     </div>
   );
 }

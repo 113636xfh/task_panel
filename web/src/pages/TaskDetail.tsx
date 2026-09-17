@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import TopControls from '../components/TopControls';
 import {
   ArrowLeft,
   X,
@@ -696,6 +697,8 @@ export default function TaskDetail() {
               <X size={13} /> {t('task.cancel')}
             </button>
           )}
+          <span style={{ width: 8 }} />
+          <TopControls />
         </div>
         <div className="td-line2">
           <div
@@ -707,15 +710,15 @@ export default function TaskDetail() {
             {task.description.replace(/[#*`>\[\]()!_~|]/g, '').replace(/\n+/g, ' ').trim().slice(0, 180)}
           </div>
           <div className="td-meta">
-            <span className="meta-ico">
-              <Folder size={13} /> <code className="mono">{task.workspace_path}</code>
+            <span className="meta-ico" title={task.workspace_path}>
+              <Folder size={13} /> <code className="mono">{projName}</code>
             </span>
             <span className="meta-ico">
               <GitBranch size={13} /> {t(task.branch_mode === 'manual' ? 'meta.branch.manual' : 'meta.branch.auto', { min: task.branch_timeout_min })}
             </span>
             {task.test_cmd && (
-              <span className="meta-ico">
-                {t('meta.test')}：<code className="mono">{task.test_cmd}</code>
+              <span className="meta-ico" title={`${t('meta.test')}: ${task.test_cmd}`}>
+                <Terminal size={13} /> {t('meta.test')}
               </span>
             )}
             {task.started_at && (
@@ -725,20 +728,11 @@ export default function TaskDetail() {
               </span>
             )}
           </div>
-        </div>
-      </header>
-
-      {/* ===== 主体：左=消息流+动作区+状态条+composer；右=计划·验收·产物侧边栏 ===== */}
-      <div className="td-body">
-      <div className="td-main">
-      {/* ===== 消息流（唯一滚动区） ===== */}
-      <div className="td-feed">
-        <div className="td-feedbar">
-          <ListFilter size={13} className="fb-ico" />
+          <span style={{ flex: 1 }} />
           <select
             className="inp"
             data-testid="feed-filter"
-            style={{ width: 138, padding: '3px 8px', fontSize: 12 }}
+            style={{ width: 126, padding: '3px 8px', fontSize: 12 }}
             value={mode === 'full' && feedFilter === 'all' ? 'full' : feedFilter}
             onChange={(e) => {
               const v = e.target.value;
@@ -757,8 +751,14 @@ export default function TaskDetail() {
             <Download size={13} />
           </button>
           <span className="fb-count">{t('feed.count', { n: events.length })}</span>
-          <span style={{ flex: 1 }} />
         </div>
+      </header>
+
+      {/* ===== 主体：左=消息流+动作区+状态条+composer；右=计划·验收·产物侧边栏 ===== */}
+      <div className="td-body">
+      <div className="td-main">
+      {/* ===== 消息流（唯一滚动区；feed 控件已并入头部第二行） ===== */}
+      <div className="td-feed">
         <div className="feed" data-testid="feed" ref={feedRef}>
           {mode === 'full' && !events.some((e) => ['message', 'system_prompt', 'subagent'].includes(e.kind)) && (
             <div className="full-hint">
@@ -835,39 +835,6 @@ export default function TaskDetail() {
               />
               <button className="btn primary" data-testid="btn-block-submit" disabled={!blockCustom.trim()} onClick={() => submitBlock(blockCustom.trim())}>
                 {t('block.submit')}
-              </button>
-            </div>
-          </div>
-        ) : task.status === 'awaiting_confirm' ? (
-          <div className="alert-card alert-confirm">
-            <div className="ac-title">
-              <ShieldCheck size={14} /> {t('confirm.title')}
-            </div>
-            <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 11 }}>
-              {t('confirm.descA')}
-              {task.test_cmd && (
-                <>
-                  {' '}
-                  <code className="mono">{task.test_cmd}</code>
-                </>
-              )}{' '}
-              {t('confirm.descB')}
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                className="btn primary big"
-                data-testid="btn-confirm-done"
-                onClick={() =>
-                  api.confirm(id).then(() => {
-                    toast(t('act.confirmed'));
-                    reloadTask();
-                  })
-                }
-              >
-                <Check size={14} /> {t('confirm.btn')}
-              </button>
-              <button className="btn ghost" data-testid="btn-rework" onClick={toggleRework}>
-                <RotateCcw size={13} /> {t('confirm.rework')}
               </button>
             </div>
           </div>
@@ -968,6 +935,43 @@ export default function TaskDetail() {
 
       {/* ===== 右侧栏：计划 / 验收 / 产物（独立滚动） ===== */}
       <aside className="td-side">
+        {/* 验收通过·等待确认 → 侧边栏顶部（不占主列） */}
+        {task.status === 'awaiting_confirm' && (
+          <div className="td-side-confirm">
+            <div className="alert-card alert-confirm">
+              <div className="ac-title">
+                <ShieldCheck size={14} /> {t('confirm.title')}
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 11 }}>
+                {t('confirm.descA')}
+                {task.test_cmd && (
+                  <>
+                    {' '}
+                    <code className="mono">{task.test_cmd}</code>
+                  </>
+                )}{' '}
+                {t('confirm.descB')}
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  className="btn primary"
+                  data-testid="btn-confirm-done"
+                  onClick={() =>
+                    api.confirm(id).then(() => {
+                      toast(t('act.confirmed'));
+                      reloadTask();
+                    })
+                  }
+                >
+                  <Check size={14} /> {t('confirm.btn')}
+                </button>
+                <button className="btn ghost" onClick={toggleRework}>
+                  <RotateCcw size={13} /> {t('confirm.rework')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="tabs">
           {(
             [
