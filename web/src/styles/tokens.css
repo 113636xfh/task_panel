@@ -43,6 +43,12 @@
   --st-failed: #b3403a;      --st-failed-bg: #fdecea;
   --st-interrupted: #6b7280; --st-interrupted-bg: #f2f3f6;
   --st-cancelled: #9ca3af;   --st-cancelled-bg: #f2f3f6;
+  --st-paused: #d97706;      --st-paused-bg: #fff7ed;
+
+  /* TUI 工具框背景（复刻 pi TUI 色值） */
+  --tool-pending-bg: #ececf2;
+  --tool-success-bg: #e9f2e9;
+  --tool-error-bg: #f7e9e9;
 }
 
 [data-theme='dark'] {
@@ -73,6 +79,12 @@
   --st-failed: #c96b62;      --st-failed-bg: #2a1715;
   --st-interrupted: #9ca0a8; --st-interrupted-bg: #1d1e22;
   --st-cancelled: #7d818a;   --st-cancelled-bg: #1a1b1e;
+  --st-paused: #f0954a;      --st-paused-bg: #2b1e12;
+
+  /* TUI 工具框背景（复刻 pi TUI 色值） */
+  --tool-pending-bg: #282832;
+  --tool-success-bg: #283228;
+  --tool-error-bg: #3c2828;
 }
 
 /* P3：强调色切换（蓝为默认；靛蓝保留为选项） */

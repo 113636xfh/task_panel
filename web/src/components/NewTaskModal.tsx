@@ -1,13 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Plus, X, ImagePlus, FolderOpen, ChevronDown } from 'lucide-react';
+import { X, ImagePlus, FolderOpen, ChevronDown } from 'lucide-react';
 import { api } from '../lib/api';
-import { onEvent } from '../lib/ws';
 import { toast } from '../lib/toast';
 import { useI18n } from '../i18n';
 import { fileToBase64 } from '../lib/img';
-import KanbanBoard from '../components/KanbanBoard';
-import type { Task } from '../lib/types';
 
 const IMG_MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', bmp: 'image/bmp' };
 
@@ -16,15 +12,18 @@ function dataUrl(name: string, data: string): string {
   return `data:${IMG_MIME[ext] ?? 'image/png'};base64,${data}`;
 }
 
-// 新建任务弹窗（P3 精简版）：标题 + 工作目录 + 任务提示词；其余收进「高级设置」
-function NewTaskModal({
-  boardId,
+export type SkillItem = { name: string; source: string; kind: string; description: string };
+
+// 新建任务弹窗（P3 精简版）：标题+优先级 | 工作目录 | 任务提示词；其余收进「高级设置」
+// 项目 = 工作目录末段，后端自动关联/创建同名看板（前端不再暴露看板概念）
+export default function NewTaskModal({
+  defaultWs,
   skills,
   onClose,
   onCreated,
 }: {
-  boardId: string;
-  skills: { name: string; source: string; kind: string; description: string }[];
+  defaultWs?: string;
+  skills: SkillItem[];
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -32,9 +31,9 @@ function NewTaskModal({
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
   const [priority, setPriority] = useState(2);
-  const [wsMode, setWsMode] = useState<'fresh' | 'shared'>('fresh');
+  const [wsMode, setWsMode] = useState<'fresh' | 'shared'>(defaultWs ? 'shared' : 'fresh');
   const [wsName, setWsName] = useState('');
-  const [wsPath, setWsPath] = useState('');
+  const [wsPath, setWsPath] = useState(defaultWs ?? '');
   const [picking, setPicking] = useState(false);
   const [advOpen, setAdvOpen] = useState(false);
   const [branch, setBranch] = useState<'manual' | 'auto'>('manual');
@@ -45,6 +44,13 @@ function NewTaskModal({
   const [busy, setBusy] = useState(false);
   const [imgFiles, setImgFiles] = useState<{ name: string; data: string; url: string }[]>([]);
   const imgInputRef = useRef<HTMLInputElement>(null);
+
+  // Esc 关闭
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [onClose]);
 
   async function pickImgs(files: FileList | null) {
     if (!files?.length) return;
@@ -81,7 +87,7 @@ function NewTaskModal({
     if (wsMode === 'shared' && !wsPath.trim()) return toast(t('modal.wsPick'), 'err');
     setBusy(true);
     try {
-      await api.createTask(boardId, {
+      await api.createTaskLoose({
         title: title.trim(),
         description: desc.trim(),
         priority,
@@ -113,9 +119,20 @@ function NewTaskModal({
           </button>
         </div>
         <div className="m-b">
-          <div className="field">
-            <label>{t('modal.title')}</label>
-            <input className="inp" data-testid="input-task-title" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('modal.titlePh')} />
+          <div className="row" style={{ gap: 12, alignItems: 'flex-end' }}>
+            <div className="field" style={{ flex: 1, minWidth: 0 }}>
+              <label>{t('modal.title')}</label>
+              <input className="inp" data-testid="input-task-title" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('modal.titlePh')} />
+            </div>
+            <div className="field" style={{ flex: 'none', width: 76 }}>
+              <label>{t('modal.priority')}</label>
+              <select className="inp" style={{ width: '100%' }} value={priority} onChange={(e) => setPriority(Number(e.target.value))}>
+                <option value={0}>P0</option>
+                <option value={1}>P1</option>
+                <option value={2}>P2</option>
+                <option value={3}>P3</option>
+              </select>
+            </div>
           </div>
 
           <div className="field">
@@ -196,15 +213,6 @@ function NewTaskModal({
             {advOpen && (
               <div className="adv-b">
                 <div className="row" style={{ gap: 16 }}>
-                  <div className="field" style={{ flex: 'none' }}>
-                    <label>{t('modal.priority')}</label>
-                    <select className="inp" style={{ width: 84 }} value={priority} onChange={(e) => setPriority(Number(e.target.value))}>
-                      <option value={0}>P0</option>
-                      <option value={1}>P1</option>
-                      <option value={2}>P2</option>
-                      <option value={3}>P3</option>
-                    </select>
-                  </div>
                   <div className="field" style={{ flex: 'none' }} title={t('modal.ctxwin.hint')}>
                     <label>{t('modal.ctxwin')}</label>
                     <input
@@ -277,75 +285,5 @@ function NewTaskModal({
         </div>
       </div>
     </div>
-  );
-}
-
-export default function BoardDetail() {
-  const { id = '' } = useParams();
-  const nav = useNavigate();
-  const [sp, setSp] = useSearchParams();
-  const { t } = useI18n();
-  const [board, setBoard] = useState<any | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [showNew, setShowNew] = useState(false);
-  const [skills, setSkills] = useState<{ name: string; source: string; kind: string; description: string }[]>([]);
-
-  // 命令面板 ?new=1：自动展开新建任务弹窗
-  useEffect(() => {
-    if (sp.get('new') === '1') {
-      setShowNew(true);
-      const p = new URLSearchParams(sp);
-      p.delete('new');
-      setSp(p, { replace: true });
-    }
-  }, [sp, setSp]);
-
-  const loadTasks = () => {
-    api.tasks(id).then(setTasks).catch(() => {});
-  };
-  useEffect(() => {
-    api.boards().then((bs) => setBoard(bs.find((b) => b.id === id) ?? null)).catch(() => {});
-    loadTasks();
-    api.skills().then((inv) => {
-      const g: any[] = [...inv.global.skills, ...inv.global.extensions];
-      const p: any[] = inv.projects.flatMap((x: any) => [...x.skills, ...x.extensions]);
-      const seen = new Set<string>();
-      setSkills([...g, ...p].filter((s) => (seen.has(s.name) ? false : (seen.add(s.name), true))));
-    }).catch(() => {});
-    const off = onEvent((ev) => {
-      if (!['task.status', 'task.created', 'boards.changed', 'task.event'].includes(ev.kind)) return;
-      if (ev.kind === 'task.event' && !tasks.some((x) => x.id === ev.payload?.taskId)) return;
-      loadTasks();
-    });
-    return off;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
-
-  const live = tasks.filter((x) => x.status !== 'failed' && x.status !== 'cancelled');
-
-  return (
-    <>
-      <div className="page-head">
-        <button className="btn ghost" onClick={() => nav('/boards')}>
-          <ArrowLeft size={14} /> {t('board.back')}
-        </button>
-        <h1>{board?.name ?? '…'}</h1>
-        <span className="sub">
-          {live.length} {t('boards.card.tasks')}
-        </span>
-        <span style={{ flex: 1 }} />
-        <button className="btn primary" data-testid="btn-new-task" onClick={() => setShowNew(true)}>
-          <Plus size={14} /> {t('board.newTask')}
-        </button>
-      </div>
-
-      {tasks.length === 0 ? (
-        <div className="empty">{t('tbl.empty')}</div>
-      ) : (
-        <KanbanBoard tasks={tasks} dataTestid="kanban-board" />
-      )}
-
-      {showNew && <NewTaskModal boardId={id} skills={skills} onClose={() => setShowNew(false)} onCreated={loadTasks} />}
-    </>
   );
 }

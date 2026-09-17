@@ -151,6 +151,7 @@ export class StubRunner {
       plan.steps[0].done = true;
       this.emit(t.id, 'progress', { done: 1, total: plan.steps.length, current: plan.steps[1]?.title ?? '全部步骤已完成' });
       this.emit(t.id, 'message', { role: 'assistant', parts: [{ type: 'toolCall', name: 'bash', args: '{\n  "command": "stub 自检"\n}' }, { type: 'text', text: '步骤 1 完成，已写回 work/plan.json。' }] });
+      this.emit(t.id, 'message', { role: 'toolResult', toolName: 'bash', isError: false, parts: [{ type: 'text', text: 'ok（stub 自检输出，共 2 行）\nself-test: pass' }] });
       if (willBlock) {
         const block = {
           question: 'stub 阻塞：缺少关键决策 X',

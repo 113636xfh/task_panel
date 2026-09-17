@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
-  SquareKanban, FileText, Wrench, Settings2, Moon, Sun, Globe, Plus, List, Search,
+  SquareKanban, FileText, Wrench, Settings2, Moon, Sun, Globe, List, Search,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useI18n } from '../i18n';
@@ -14,7 +14,7 @@ import { useI18n } from '../i18n';
  */
 type Item = {
   id: string;
-  group: 'actions' | 'boards' | 'tasks';
+  group: 'actions' | 'projects' | 'tasks';
   label: string;
   sub?: string;
   icon: ReactNode;
@@ -25,12 +25,11 @@ type Item = {
 export default function CommandPalette() {
   const { t, locale, setLocale } = useI18n();
   const nav = useNavigate();
-  const loc = useLocation();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [active, setActive] = useState(0);
-  const [boards, setBoards] = useState<any[]>([]);
-  const [tasks, setTasks] = useState<{ t: any; boardId: string }[]>([]);
+  const [projects, setProjects] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const openRef = useRef(false);
@@ -77,15 +76,8 @@ export default function CommandPalette() {
   // 打开时拉数据（本地数据量小，全量拉取足够快）
   useEffect(() => {
     if (!open) return;
-    api
-      .boards()
-      .then((bs) => {
-        setBoards(bs);
-        Promise.all(bs.map((b) => api.tasks(b.id).then((ts) => ts.map((tt) => ({ t: tt, boardId: b.id })))))
-          .then((alls) => setTasks(alls.flat()))
-          .catch(() => {});
-      })
-      .catch(() => {});
+    api.projects().then(setProjects).catch(() => {});
+    api.tasksAll().then(setTasks).catch(() => {});
   }, [open]);
 
   const go = (path: string) => {
@@ -93,15 +85,12 @@ export default function CommandPalette() {
     nav(path);
   };
 
-  const boardIdHere = loc.pathname.match(/^\/boards\/([^/]+)/)?.[1] ?? '';
+  const baseName = (p: string) => (p || '').split(/[\\/]/).filter(Boolean).pop() || '—';
 
   const items = useMemo<Item[]>(() => {
     const actions: Item[] = [
       { id: 'a-boards', group: 'actions', label: t('cmdk.act.goBoards'), icon: <List size={14} />, run: () => go('/boards'), keywords: 'boards list ' + t('cmdk.act.goBoards').toLowerCase() },
-      { id: 'a-newboard', group: 'actions', label: t('cmdk.act.newBoard'), icon: <Plus size={14} />, run: () => go('/boards?new=1'), keywords: 'new board ' + t('cmdk.act.newBoard').toLowerCase() },
-      ...(boardIdHere
-        ? [{ id: 'a-newtask', group: 'actions' as const, label: t('cmdk.act.newTask'), icon: <FileText size={14} />, run: () => go(`/boards/${boardIdHere}?new=1`), keywords: 'new task ' + t('cmdk.act.newTask').toLowerCase() }]
-        : []),
+      { id: 'a-newtask', group: 'actions', label: t('cmdk.act.newTask'), icon: <FileText size={14} />, run: () => go('/boards?new=1'), keywords: 'new task ' + t('cmdk.act.newTask').toLowerCase() },
       { id: 'a-skills', group: 'actions', label: t('cmdk.act.skills'), icon: <Wrench size={14} />, run: () => go('/skills'), keywords: 'skills ' + t('cmdk.act.skills').toLowerCase() },
       { id: 'a-settings', group: 'actions', label: t('cmdk.act.settings'), icon: <Settings2 size={14} />, run: () => go('/settings'), keywords: 'settings ' + t('cmdk.act.settings').toLowerCase() },
       {
@@ -122,26 +111,26 @@ export default function CommandPalette() {
         keywords: 'language en zh ' + t('cmdk.act.lang').toLowerCase(),
       },
     ];
-    const boardItems: Item[] = boards.map((b) => ({
-      id: `b-${b.id}`, group: 'boards', label: b.name,
-      sub: t('nav.boards'), icon: <SquareKanban size={14} />,
-      run: () => go(`/boards/${b.id}`),
-      keywords: b.name.toLowerCase(),
+    const projectItems: Item[] = projects.map((p) => ({
+      id: `b-${p.name}`, group: 'projects', label: p.name,
+      sub: `${p.tasks} ${t('boards.card.tasks')}`, icon: <SquareKanban size={14} />,
+      run: () => go(`/p/${encodeURIComponent(p.name)}`),
+      keywords: p.name.toLowerCase(),
     }));
     const taskItems: Item[] = tasks
-      .filter(({ t: tt }) => !['done', 'cancelled'].includes(tt.status))
-      .map(({ t: tt, boardId }) => ({
+      .filter((tt) => !['done', 'cancelled'].includes(tt.status))
+      .map((tt: any) => ({
         id: `t-${tt.id}`, group: 'tasks',
         label: `#${tt.num} ${tt.title}`,
         sub: t(`status.${tt.status}`),
         icon: <FileText size={14} />,
-        run: () => go(`/boards/${boardId}/tasks/${tt.id}`),
+        run: () => go(`/p/${encodeURIComponent(baseName(tt.workspace_path))}/tasks/${tt.id}`),
         keywords: `${tt.num} ${tt.title.toLowerCase()} ${tt.status}`,
       }));
     const needle = q.trim().toLowerCase();
     const match = (x: Item) => !needle || x.label.toLowerCase().includes(needle) || x.keywords.includes(needle);
-    return [...actions, ...boardItems, ...taskItems].filter(match);
-  }, [q, boards, tasks, t, locale, theme, boardIdHere]); // eslint-disable-line react-hooks/exhaustive-deps
+    return [...actions, ...projectItems, ...taskItems].filter(match);
+  }, [q, projects, tasks, t, locale, theme]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 结果变化时收敛 active
   useEffect(() => {
@@ -152,7 +141,7 @@ export default function CommandPalette() {
 
   const grouped: [string, Item[]][] = [
     ['actions', items.filter((x) => x.group === 'actions')],
-    ['boards', items.filter((x) => x.group === 'boards')],
+    ['projects', items.filter((x) => x.group === 'projects')],
     ['tasks', items.filter((x) => x.group === 'tasks')],
   ].filter(([, xs]) => xs.length) as [string, Item[]][];
 

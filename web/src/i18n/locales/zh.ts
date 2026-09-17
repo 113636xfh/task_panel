@@ -2,6 +2,7 @@
 export const zh: Record<string, string> = {
   'app.name': 'Task Panel',
   'crumb.task': '任务',
+  'crumb.project': '项目看板',
   'ws.on': '事件流已连接',
   'ws.off': '事件流断开，重连中',
 
@@ -15,6 +16,7 @@ export const zh: Record<string, string> = {
   'cmdk.placeholder': '搜索看板、任务、动作…',
   'cmdk.group.actions': '动作',
   'cmdk.group.boards': '看板',
+  'cmdk.group.projects': '项目',
   'cmdk.group.tasks': '任务',
   'cmdk.act.goBoards': '打开看板列表',
   'cmdk.act.newBoard': '新建看板',
@@ -32,6 +34,7 @@ export const zh: Record<string, string> = {
   'runtime.waiting': '待答',
   'runtime.blocked': '阻塞',
   'runtime.awaiting': '待确认',
+  'runtime.paused': '暂停',
 
   // 状态（徽章 + 看板列共用；看板列用 col.* 以便更短）
   'status.ready': '就绪',
@@ -74,6 +77,7 @@ export const zh: Record<string, string> = {
   'status.failed': '失败',
   'status.interrupted': '被抢占',
   'status.cancelled': '已取消',
+  'status.paused': '已暂停',
     'phase.wait': '等待',
     'phase.plan': '打磨',
     'phase.exec': '执行',
@@ -82,6 +86,8 @@ export const zh: Record<string, string> = {
     'tbl.confirm': '确认完成',
     'tbl.empty': '还没有任务',
     'sb.boards': '看板',
+    'sb.projects': '项目',
+    'sb.active': '进行中',
     'hist.title': '历史任务',
     'hist.all': '全部',
     'hist.empty': '暂无已结束的任务',
@@ -138,7 +144,7 @@ export const zh: Record<string, string> = {
   'modal.desc': '任务描述（越具体越好 —— 打磨阶段会先审视这段描述）',
   'modal.prompt': '任务提示词（目标 / 背景 / 约束 / 期望结果）',
   'modal.prompt.hint': '验收标准、测试命令等可直接写在这里 —— 打磨阶段智能体会自行提炼为验收条件与测试命令，无需单独填。',
-  'modal.advanced': '高级设置（优先级 / 会话长度 / 分支策略 / 附加说明 / 技能）',
+  'modal.advanced': '高级设置（会话长度 / 分支策略 / 附加说明 / 技能）',
   'modal.descPh': '背景 / 目标 / 约束 / 期望结果…\n例：给 src/x.ts 增加 Y 功能，注意保持 Z 行为不变。',
   'modal.missing': '标题和描述必填',
   'modal.wsPick': '请选择项目目录',
@@ -181,6 +187,9 @@ export const zh: Record<string, string> = {
   'meta.duration': '用时',
 
   'task.cancel': '取消任务',
+  'task.pause': '暂停',
+  'task.resume': '继续',
+  'task.descTitle': '任务描述',
   'task.test': '测试',
 
   'card.desc': '任务描述',
@@ -201,6 +210,14 @@ export const zh: Record<string, string> = {
   'branch.submitted': '已提交，任务恢复执行',
   'branch.needAnswer': '「{q}…」还需要选择或输入',
   'branch.recommended': '推荐',
+  'branch.customHint': '输入自定义回答将取消上方已选选项。',
+  'toolbox.args': '参数',
+  'toolbox.argsClose': '收起参数',
+  'toolbox.earlier': '… {n} 行前文（点击展开）',
+  'toolbox.expand': '展开全部（共 {n} 行）',
+  'toolbox.collapse': '收起',
+  'tb.elapsed': 'Elapsed',
+  'tb.took': 'Took',
 
   'block.title': '阻塞 · 需要你的决策',
   'block.ctx.now': '现状',
@@ -235,6 +252,7 @@ export const zh: Record<string, string> = {
   'feed.filter.exec': '计划·执行',
   'feed.filter.review': '验收·阻塞',
   'feed.filter.system': '系统',
+  'feed.filter.full': '完整推理',
   'feed.export': '导出事件（JSON）',
   'feed.exported': '已导出事件 JSON',
 

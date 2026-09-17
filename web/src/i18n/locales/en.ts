@@ -2,6 +2,7 @@
 export const en: Record<string, string> = {
   'app.name': 'Task Panel',
   'crumb.task': 'Task',
+  'crumb.project': 'Project board',
   'ws.on': 'Event stream connected',
   'ws.off': 'Event stream disconnected, reconnecting',
 
@@ -14,6 +15,7 @@ export const en: Record<string, string> = {
   'cmdk.placeholder': 'Search boards, tasks, actions…',
   'cmdk.group.actions': 'Actions',
   'cmdk.group.boards': 'Boards',
+  'cmdk.group.projects': 'Projects',
   'cmdk.group.tasks': 'Tasks',
   'cmdk.act.goBoards': 'Go to boards',
   'cmdk.act.newBoard': 'New board',
@@ -31,6 +33,7 @@ export const en: Record<string, string> = {
   'runtime.waiting': 'waiting',
   'runtime.blocked': 'blocked',
   'runtime.awaiting': 'awaiting',
+  'runtime.paused': 'paused',
 
   'status.ready': 'Ready',
   'msg.system': 'System prompt',
@@ -72,6 +75,9 @@ export const en: Record<string, string> = {
   'status.failed': 'Failed',
   'status.interrupted': 'Preempted',
   'status.cancelled': 'Cancelled',
+  'status.paused': 'Paused',
+  'sb.projects': 'Projects',
+  'sb.active': 'active',
 
   'col.queued': 'Queued',
   'col.planning': 'Planning',
@@ -121,7 +127,7 @@ export const en: Record<string, string> = {
   'modal.desc': 'Description (more specific is better — the planning phase reviews this first)',
   'modal.prompt': 'Task prompt (goal / context / constraints / expected outcome)',
   'modal.prompt.hint': 'Acceptance criteria and test commands can be written right here — the planning agent extracts them into acceptance criteria and a test command automatically. No separate fields needed.',
-  'modal.advanced': 'Advanced (priority / session length / branch strategy / extra notes / skills)',
+  'modal.advanced': 'Advanced (session length / branch strategy / extra notes / skills)',
   'modal.descPh': 'Context / goal / constraints / expected outcome…\nE.g.: add Y to src/x.ts, keeping Z behavior unchanged.',
   'modal.missing': 'Title and description are required',
   'modal.wsPick': 'Please pick a project dir',
@@ -164,6 +170,8 @@ export const en: Record<string, string> = {
   'meta.duration': 'Elapsed',
 
   'task.cancel': 'Cancel task',
+  'task.pause': 'Pause',
+  'task.resume': 'Resume',
   'task.test': 'Test',
 
   'card.desc': 'Description',
@@ -184,6 +192,14 @@ export const en: Record<string, string> = {
   'branch.submitted': 'Submitted — task resumed',
   'branch.needAnswer': '“{q}…” still needs a selection or input',
   'branch.recommended': 'Recommended',
+  'branch.customHint': 'Typing a custom answer clears the selected option.',
+  'toolbox.args': 'Args',
+  'toolbox.argsClose': 'Hide args',
+  'toolbox.earlier': '… {n} earlier lines (click to expand)',
+  'toolbox.expand': 'Expand all ({n} lines)',
+  'toolbox.collapse': 'Collapse',
+  'tb.elapsed': 'Elapsed',
+  'tb.took': 'Took',
 
   'block.title': 'Blocked · Your decision needed',
   'block.ctx.now': 'State',
@@ -218,6 +234,7 @@ export const en: Record<string, string> = {
   'feed.filter.exec': 'Plan & execution',
   'feed.filter.review': 'Review & blocks',
   'feed.filter.system': 'System',
+  'feed.filter.full': 'Full reasoning',
   'feed.export': 'Export events (JSON)',
   'feed.exported': 'Exported events JSON',
 

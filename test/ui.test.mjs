@@ -14,6 +14,22 @@ const ART = path.join(ROOT, 'test', 'ui-artifacts');
 const PORT = 18802;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// num 按项目（看板）计数，非全局唯一 → 人形测试按标题定位卡片
+async function cardInfo(title) {
+  return page.evaluate((t) => {
+    const el = [...document.querySelectorAll('[data-testid="task-row"]')].find((e) => (e.textContent ?? '').includes(t));
+    return el ? { num: el.dataset.num, status: el.dataset.status } : null;
+  }, title);
+}
+async function clickCard(title, what = 'card') {
+  return page.evaluate((t, w) => {
+    const el = [...document.querySelectorAll('[data-testid="task-row"]')].find((e) => (e.textContent ?? '').includes(t));
+    if (!el) return false;
+    (w === 'start' ? el.querySelector('[data-testid="btn-start"]') : el)?.click();
+    return true;
+  }, title, what);
+}
+
 function findBrowser() {
   if (process.env.TP_BROWSER && fs.existsSync(process.env.TP_BROWSER)) return process.env.TP_BROWSER;
   const cands = [
@@ -69,26 +85,10 @@ test('UI 人形全流程：建看板 → 建任务 → 分支回答 → 确认 �
 });
 
 async function run1() {
-  // 1. 打开应用（空数据目录 → 空看板列表）
+  // 1. 打开应用（空数据目录 → 空首页看板；看板=项目已合并，无看板概念）
   await page.goto(S.base, { waitUntil: 'networkidle0' });
-  await page.waitForSelector('[data-testid="btn-new-board"]', { visible: true });
-  await shot('boards-empty');
-
-  // 2. 新建看板
-  await page.click('[data-testid="btn-new-board"]');
-  await page.waitForSelector('[data-testid="input-board-name"]', { visible: true });
-  await page.type('[data-testid="input-board-name"]', 'UI 人形测试看板');
-  await shot('create-board-dialog');
-  await page.click('[data-testid="btn-create-board"]');
-  // P3：看板出现在左侧边栏列表
-  await page.waitForSelector('[data-testid^="sb-board-"]', { visible: true });
-  await shot('board-created');
-
-  // 3. 进入看板（P3：四阶段总表取代 8 列看板）
-  await page.click('[data-testid^="sb-board-"]');
   await page.waitForSelector('[data-testid="btn-new-task"]', { visible: true });
-  await new Promise((r) => setTimeout(r, 400));
-  await shot('kanban-empty');
+  await shot('home-empty');
 
   // 4. 新建任务（#branch 剧本：会触发分支问答）
   await page.click('[data-testid="btn-new-task"]');
@@ -99,9 +99,10 @@ async function run1() {
   await shot('create-task-dialog');
   await page.click('[data-testid="btn-create-task"]');
 
-  // 5. 任务行出现在总表（P3：创建后为 ready，需手动启动）
+  // 5. 任务卡片出现在首页看板；项目出现在左侧边栏（fresh 目录会自动编号，如 ui-branch-28）
   await page.waitForSelector('[data-testid="task-row"][data-num="1"]', { visible: true });
-  await shot('task-on-board');
+  await page.waitForSelector('[data-testid^="sb-project-"]', { visible: true });
+  await shot('task-on-home');
   await page.click('[data-testid="task-row"][data-num="1"] [data-testid="btn-start"]');
   await page.waitForFunction(() => {
     const el = document.querySelector('[data-testid="task-row"][data-num="1"]');
@@ -143,9 +144,8 @@ async function run1() {
   await waitStatus('done', 10_000);
   await shot('task-done');
 
-  // 9. 返回看板：卡片应位于 done 列
-  const board = (await a.get('/boards'))[0];
-  await page.goto(`${S.base}/boards/${board.id}`, { waitUntil: 'networkidle0' });
+  // 9. 返回首页：卡片应位于 done 列
+  await page.goto(`${S.base}/boards`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('[data-testid="task-row"][data-status="done"][data-num="1"]', { visible: true });
   const doneRowCount = await page.$$eval('[data-testid="task-row"][data-status="done"]', (els) => els.length);
   assert.equal(doneRowCount, 1);
@@ -162,33 +162,33 @@ test('UI 人形：steer 留言 + 长文展开 + 主题/语言切换', async () =
 });
 
 async function run2() {
-  // 先回到看板页（上一个测试可能停在任务详情）
-  const board = (await a.get('/boards'))[0];
-  await page.goto(`${S.base}/boards/${board.id}`, { waitUntil: 'networkidle0' });
+  // 先回到首页（上一个测试可能停在任务详情）
+  await page.goto(`${S.base}/boards`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('[data-testid="btn-new-task"]', { visible: true });
 
-  // 取当前看板最大序号（下一个新任务的 num）
-  const tasks0 = await a.get(`/boards/${board.id}/tasks`);
-  const nextNum = tasks0.length ? Math.max(...tasks0.map((t) => t.num)) + 1 : 1;
-
-  // 建一个 #slow 任务（执行 5s，留 steer 窗口）
+  // 建一个 #slow 任务（执行 5s，留 steer 窗口；新项目自动创建，num 从 1 重新计）
+  const SLOW = '#slow 人形 steer 任务';
   await page.click('[data-testid="btn-new-task"]');
   await page.waitForSelector('[data-testid="input-task-title"]', { visible: true });
-  await page.type('[data-testid="input-task-title"]', '#slow 人形 steer 任务');
+  await page.type('[data-testid="input-task-title"]', SLOW);
   await page.type('[data-testid="input-task-desc"]', 'steer 测试任务。');
   await page.type('[data-testid="input-ws-name"]', 'ui-slow');
   await page.click('[data-testid="btn-create-task"]');
-  await page.waitForSelector(`[data-testid="task-row"][data-num="${nextNum}"]`, { visible: true, timeout: 30_000 });
-  await page.click(`[data-testid="task-row"][data-num="${nextNum}"] [data-testid="btn-start"]`);
   await page.waitForFunction(
-    (n) => {
-      const el = document.querySelector(`[data-testid="task-row"][data-num="${n}"]`);
-      return el && el.dataset.status !== 'ready';
+    (t) => [...document.querySelectorAll('[data-testid="task-row"]')].some((el) => (el.textContent ?? '').includes(t)),
+    { timeout: 30_000 },
+    SLOW
+  );
+  assert.ok(await clickCard(SLOW, 'start'), '应能点启动');
+  await page.waitForFunction(
+    (t) => {
+      const el = [...document.querySelectorAll('[data-testid="task-row"]')].find((e) => (e.textContent ?? '').includes(t));
+      return el ? el.dataset.status !== 'ready' : false;
     },
     { timeout: 10_000 },
-    String(nextNum)
+    SLOW
   );
-  await page.click(`[data-testid="task-row"][data-num="${nextNum}"]`);
+  assert.ok(await clickCard(SLOW), '应能打开详情');
 
   // 执行中：输入 steer 并发送
   await page.waitForSelector('[data-testid="input-msg-short"]', { visible: true, timeout: 30_000 });
@@ -221,9 +221,15 @@ async function run2() {
     () => document.querySelector('[data-testid="status-badge"]')?.className.includes('st-done') ?? false,
     { timeout: 10_000 }
   );
-  const board2 = (await a.get('/boards'))[0];
-  await page.goto(`${S.base}/boards/${board2.id}`, { waitUntil: 'networkidle0' });
-  await page.waitForSelector(`[data-testid="task-row"][data-status="done"][data-num="${nextNum}"]`, { visible: true });
+  await page.goto(`${S.base}/boards`, { waitUntil: 'networkidle0' });
+  await page.waitForFunction(
+    (t) => {
+      const el = [...document.querySelectorAll('[data-testid="task-row"]')].find((e) => (e.textContent ?? '').includes(t));
+      return el ? el.dataset.status === 'done' : false;
+    },
+    { timeout: 30_000 },
+    SLOW
+  );
   await shot('second-card-done');
 
   // 主题切换（暗 → 亮）
@@ -257,17 +263,17 @@ test('UI 人形：⌘K 命令面板（搜索/键盘导航/跳转）', async () =
 });
 
 async function run3() {
-  // 确保在看板页
-  const board = (await a.get('/boards'))[0];
-  await page.goto(`${S.base}/boards/${board.id}`, { waitUntil: 'networkidle0' });
+  // 确保在首页
+  await page.goto(`${S.base}/boards`, { waitUntil: 'networkidle0' });
 
   // Ctrl+K 打开
   await page.keyboard.down('Control');
   await page.keyboard.press('KeyK');
   await page.keyboard.up('Control');
   await page.waitForSelector('[data-testid="cmdk-panel"]', { visible: true });
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="cmdk-item"]').length >= 7, { timeout: 10_000 });
   const itemsAll = await page.$$eval('[data-testid="cmdk-item"]', (els) => els.length);
-  assert.ok(itemsAll >= 7, '面板应有动作+看板条目');
+  assert.ok(itemsAll >= 7, '面板应有动作+项目条目');
 
   // 搜索“设置” → 过滤到 1 条 → Enter 跳转
   await page.type('[data-testid="cmdk-input"]', '设置');
@@ -301,12 +307,12 @@ async function run3() {
   assert.equal(await page.evaluate(() => !!document.querySelector('[data-testid="cmdk-panel"]')), false);
 
   // ===== feed 筛选 / 导出 =====
-  // 打开任务 1（已完成，事件最多）
-  const b1 = (await a.get('/boards'))[0];
-  const tasks1 = await a.get(`/boards/${b1.id}/tasks`);
+  // 打开一个已完成任务（事件最多）
+  const tasks1 = await a.get('/tasks/all');
   const done1 = tasks1.find((tt) => tt.status === 'done');
   assert.ok(done1, '应有已完成任务');
-  await page.goto(`${S.base}/boards/${b1.id}/tasks/${done1.id}`, { waitUntil: 'networkidle0' });
+  const doneProj = (done1.workspace_path.split(/[\\/]/).filter(Boolean).pop() || 'p').toLowerCase();
+  await page.goto(`${S.base}/p/${encodeURIComponent(doneProj)}/tasks/${done1.id}`, { waitUntil: 'networkidle0' });
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="ev"]').length > 0, { timeout: 10000 });
   await new Promise((r) => setTimeout(r, 600));
   const allN = await page.$$eval('[data-testid="ev"]', (els) => els.length);

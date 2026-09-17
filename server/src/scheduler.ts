@@ -75,6 +75,7 @@ export function runtimeStats() {
     used: runners.size,
     total: s.concurrency,
     queue: cnt('queued') + cnt('interrupted'),
+    paused: cnt('paused'),
     ready: cnt('ready'),
     waiting: cnt('waiting_input'),
     blocked: cnt('blocked'),
@@ -264,6 +265,35 @@ export function confirmTask(taskId: string) {
   db.prepare('UPDATE tasks SET status=\'done\', finished_at=? WHERE id=?').run(Date.now(), taskId);
   publish('task.status', { taskId, to: 'done', from: 'awaiting_confirm' });
   publish('runtime.slots', runtimeStats());
+  return { ok: true };
+}
+
+export function pauseTask(taskId: string) {
+  const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(taskId) as TaskRow | undefined;
+  if (!t) return { ok: false, error: 'not found' };
+  const pausable = ['ready', 'queued', 'planning', 'waiting_input', 'executing', 'blocked', 'testing', 'interrupted', 'awaiting_confirm'];
+  if (!pausable.includes(t.status)) return { ok: false, error: `当前状态不可暂停（${t.status}）` };
+  const r = runners.get(taskId);
+  if (r) { try { r.stop(); } catch { /* ignore */ } }
+  db.prepare("UPDATE tasks SET status='paused' WHERE id=?").run(taskId);
+  db.prepare('INSERT INTO checkpoints (task_id, at_status, summary, at) VALUES (?,?,?,?)').run(
+    taskId, 'paused', '用户手动暂停，断点可恢复', Date.now()
+  );
+  emitEvent(taskId, 'system', { text: '已暂停：断点已保存，点「继续」从断点恢复（已完成步骤不重放）' });
+  publish('task.status', { taskId, to: 'paused', from: t.status });
+  publish('runtime.slots', runtimeStats());
+  return { ok: true };
+}
+
+export function resumeTask(taskId: string) {
+  const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(taskId) as TaskRow | undefined;
+  if (!t) return { ok: false, error: 'not found' };
+  if (t.status !== 'paused') return { ok: false, error: `只有「已暂停」任务可继续（当前：${t.status}）` };
+  db.prepare("UPDATE tasks SET status='queued' WHERE id=?").run(taskId);
+  emitEvent(taskId, 'system', { text: '已继续：进入打磨队列，将从断点恢复' });
+  publish('task.status', { taskId, to: 'queued', from: 'paused' });
+  publish('runtime.slots', runtimeStats());
+  tick();
   return { ok: true };
 }
 

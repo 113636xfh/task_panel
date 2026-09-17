@@ -1,16 +1,15 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { SquareKanban, Wrench, Settings2, Moon, Sun, Globe, Type, History as HistIcon, Plus, X, FolderKanban } from 'lucide-react';
+import { SquareKanban, Wrench, Settings2, Moon, Sun, Globe, Type, History as HistIcon, FolderKanban } from 'lucide-react';
 import { onEvent, wsState } from '../lib/ws';
 import { api } from '../lib/api';
-import { toast } from '../lib/toast';
-import type { Board, Runtime } from '../lib/types';
+import type { Project, Runtime } from '../lib/types';
 import { useI18n } from '../i18n';
 import CommandPalette from './CommandPalette';
 
 const TITLES: [RegExp, string][] = [
-  [/^\/boards\/.+\/tasks/, 'crumb.task'],
-  [/^\/boards\/.+/, 'nav.boards'],
+  [/^\/p\/[^/]+\/tasks/, 'crumb.task'],
+  [/^\/p\//, 'crumb.project'],
   [/^\/skills/, 'nav.skills'],
   [/^\/settings/, 'nav.settings'],
   [/^\/history/, 'nav.history'],
@@ -47,40 +46,15 @@ export default function Layout() {
   const [rt, setRt] = useState<Runtime | null>(null);
   const [online, setOnline] = useState(wsState.online);
   const [theme, setTheme] = useState(localStorage.getItem('tp-theme') ?? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
-  const [boards, setBoards] = useState<Board[]>([]);
-  const [newBoard, setNewBoard] = useState('');
-  const [showSbBoard, setShowSbBoard] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
 
-  const loadBoards = () => api.boards().then(setBoards).catch(() => {});
+  const loadProjects = () => api.projects().then(setProjects).catch(() => {});
   useEffect(() => {
-    loadBoards();
+    loadProjects();
     return onEvent((ev) => {
-      if (ev.kind === 'boards.changed') loadBoards();
+      if (ev.kind === 'boards.changed' || ev.kind === 'task.created' || ev.kind === 'task.status') loadProjects();
     });
   }, []);
-
-  async function createBoard() {
-    const n = newBoard.trim();
-    if (!n) return;
-    try {
-      await api.createBoard(n);
-      setNewBoard('');
-      setShowSbBoard(false);
-      toast(t('boards.created'));
-    } catch (e: any) {
-      toast(e.message, 'err');
-    }
-  }
-
-  async function deleteBoard(b: Board) {
-    if (!confirm(t('boards.delConfirm', { name: b.name }))) return;
-    try {
-      await api.deleteBoard(b.id);
-      toast(t('boards.deleted'));
-    } catch (e: any) {
-      toast(e.message, 'err');
-    }
-  }
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -127,7 +101,7 @@ export default function Layout() {
         </div>
         <NavLink
           to="/boards"
-          className={({ isActive }) => `nav-item ${isActive && !loc.pathname.includes('/boards/') ? 'active' : ''}`}
+          className={({ isActive }) => `nav-item ${isActive && loc.pathname === '/boards' ? 'active' : ''}`}
         >
           <span className="ico">
             <SquareKanban size={15} />
@@ -135,62 +109,23 @@ export default function Layout() {
           {t('nav.boards')}
         </NavLink>
 
-        {/* P3：看板列表（侧栏） */}
-        <div className="sb-section" data-testid="sb-boards">
+        {/* 项目（看板与项目合并：每个项目 = 一张看板） */}
+        <div className="sb-section" data-testid="sb-projects">
           <div className="sb-sec-h">
-            <FolderKanban size={12} /> {t('sb.boards')}
-            <button
-              className="btn ghost mini"
-              data-testid="btn-sb-newboard"
-              onClick={() => {
-                setNewBoard('');
-                setShowSbBoard(true);
-                setTimeout(() => document.querySelector<HTMLInputElement>('[data-testid=input-sb-board]')?.focus());
-              }}
-            >
-              <Plus size={12} />
-            </button>
+            <FolderKanban size={12} /> {t('sb.projects')}
           </div>
-          {boards.map((b) => (
+          {projects.map((p) => (
             <div
-              key={b.id}
-              className={`sb-item ${loc.pathname === `/boards/${b.id}` ? 'active' : ''}`}
-              data-testid={`sb-board-${b.id.slice(2)}`}
-              onClick={() => nav(`/boards/${b.id}`)}
+              key={p.name}
+              className={`sb-item ${loc.pathname === `/p/${encodeURIComponent(p.name)}` ? 'active' : ''}`}
+              data-testid={`sb-project-${p.name.toLowerCase()}`}
+              onClick={() => nav(`/p/${encodeURIComponent(p.name)}`)}
             >
-              <span className="t2">{b.name}</span>
-              <span style={{ color: 'var(--text-3)', fontSize: 11 }}>{b.total}</span>
-              <button
-                className="x"
-                title={t('boards.delete')}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteBoard(b);
-                }}
-              >
-                <X size={12} />
-              </button>
+              <span className="t2">{p.name}</span>
+              <span style={{ color: 'var(--text-3)', fontSize: 11 }}>{p.tasks}</span>
+              {p.active > 0 && <span style={{ color: 'var(--st-executing)', fontSize: 11 }} title={t('sb.active')}>●</span>}
             </div>
           ))}
-          {showSbBoard && (
-            <div className="sb-new">
-              <input
-                className="inp"
-                data-testid="input-sb-board"
-                placeholder={t('boards.newPh')}
-                autoFocus
-                value={newBoard}
-                onChange={(e) => setNewBoard(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') createBoard();
-                  if (e.key === 'Escape') setShowSbBoard(false);
-                }}
-              />
-              <button className="btn primary mini" data-testid="btn-sb-createboard" onClick={createBoard}>
-                {t('boards.create')}
-              </button>
-            </div>
-          )}
         </div>
 
         <NavLink to="/history" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
@@ -231,6 +166,9 @@ export default function Layout() {
             </span>
             <span>
               {t('runtime.queued')} <b>{rt?.queue ?? 0}</b>
+            </span>
+            <span style={{ color: (rt?.paused ?? 0) > 0 ? 'var(--st-waiting)' : undefined }}>
+              {t('runtime.paused')} <b>{rt?.paused ?? 0}</b>
             </span>
             <span>
               {t('runtime.waiting')} <b>{rt?.waiting ?? 0}</b>

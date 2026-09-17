@@ -89,7 +89,7 @@ code, .mono { font-family: var(--font-mono); font-size: 0.92em; }
 .topbar .crumb { color: var(--text-3); font-size: 12.5px; }
 
 .content { flex: 1; overflow: auto; padding: 18px 22px 40px; }
-.content:has(> .kb) { overflow: hidden; padding: 0 18px 14px; }
+.content:has(> .kb) { padding: 0 18px 14px; }
 
 .ws-dot {
   width: 8px; height: 8px; border-radius: 50%;
@@ -359,6 +359,7 @@ select.inp { appearance: auto; }
   text-align: left;
   border: 1px solid var(--line-strong);
   background: var(--bg);
+  color: var(--text);
   border-radius: var(--r-md);
   padding: 9px 12px;
   display: flex; flex-direction: column; gap: 3px;
@@ -551,7 +552,7 @@ input[type='number'].num-inp { min-width: 110px; }
 @keyframes slidein { from { transform: translateX(16px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* markdown 轻渲染 */
-.md p { margin: 0 0 8px; }
+.md p { margin: 0 0 1.4em; }
 .md h1, .md h2, .md h3 { margin: 12px 0 6px; font-size: 13.5px; }
 .md ul, .md ol { margin: 4px 0 8px; padding-left: 20px; }
 .md code { background: var(--bg-panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-family: var(--font-mono); font-size: 11.8px; }
@@ -842,6 +843,7 @@ input[type='number'].num-inp { min-width: 110px; }
 .pill.s-done           { color: var(--st-done);        background: var(--st-done-bg); }
 .pill.s-failed         { color: var(--st-failed);      background: var(--st-failed-bg); }
 .pill.s-cancelled      { color: var(--st-cancelled);   background: var(--st-cancelled-bg); }
+.pill.s-paused        { color: var(--st-paused);      background: var(--st-paused-bg); }
 .ph .line {
   font-size: 11.3px;
   color: var(--text-3);
@@ -969,34 +971,39 @@ input[type='number'].num-inp { min-width: 110px; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 46ch;
+  flex: 1;
+  min-width: 0;
+}
+/* 第二行：描述（单行截断，点击弹 modal） + 元信息（同行不换行） */
+.td-line2 {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 6px;
 }
 .td-desc {
-  margin-top: 7px;
-  max-height: 38px;
-  overflow: hidden;
+  flex: 1;
+  min-width: 0;
   cursor: pointer;
   font-size: 12.3px;
   color: var(--text-2);
   line-height: 1.5;
-  position: relative;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.td-desc.open { max-height: 300px; overflow: auto; }
-.td-desc:not(.open)::after {
-  content: '';
-  position: absolute;
-  right: 0; bottom: 0; left: 0;
-  height: 14px;
-  background: linear-gradient(transparent, var(--bg-panel));
-}
+.td-desc:hover { color: var(--text); }
 .td-meta {
   display: flex;
+  align-items: center;
   gap: 14px;
-  flex-wrap: wrap;
-  margin-top: 7px;
+  flex-wrap: nowrap;
+  overflow: hidden;
   font-size: 11.8px;
   color: var(--text-3);
+  flex: none;
 }
+.td-meta .meta-ico { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; }
 /* --- 中部：消息流（唯一滚动区） --- */
 .td-feed {
   flex: 1;
@@ -1119,7 +1126,7 @@ input[type='number'].num-inp { min-width: 110px; }
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: color-mix(in srgb, var(--text) 2.5%, transparent);
-  min-height: 0;
+  min-height: 280px;
 }
 .kb-col-h {
   display: flex; align-items: center; gap: 7px;
@@ -1141,8 +1148,7 @@ input[type='number'].num-inp { min-width: 110px; }
   background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 .kb-col-b {
-  flex: 1; min-height: 0;
-  overflow: auto;
+  flex: 1;
   padding: 10px 10px 12px;
   display: flex; flex-direction: column; gap: 10px;
 }
@@ -1289,3 +1295,103 @@ input[type='number'].num-inp { min-width: 110px; }
 .m-text { font-size: 12.8px; }
 /* summary 模式 subagent 行 */
 .ev-sub .ev-body { color: var(--accent); font-weight: 500; }
+
+/* ===== TUI 风格 full 模式（复刻 pi TUI） ===== */
+/* 主体：左主列 + 右侧栏 */
+.td-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+}
+.td-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.td-side {
+  width: 340px;
+  flex: none;
+  border-left: 1px solid var(--line);
+  background: var(--bg-panel);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.td-side .tabs { margin-bottom: 10px; padding-top: 2px; }
+@media (max-width: 1100px) { .td-side { width: 300px; } }
+@media (max-width: 900px) { .td-side { display: none; } }
+
+/* 分支决策 modal */
+.branch-modal { max-width: 640px; }
+.branch-q { margin-bottom: 16px; }
+.bq-title { font-weight: 650; font-size: 13px; margin-bottom: 8px; line-height: 1.5; }
+
+/* 工具调用框（TUI：仅背景色、无描边；执行中=灰 / 成功=绿 / 失败=红） */
+.toolbox {
+  border-radius: var(--r-md);
+  padding: 8px 11px 7px;
+  margin: 9px 0 11px 8px;
+  max-width: 94%;
+  font-size: 12.3px;
+}
+.toolbox.st-pending { background: var(--tool-pending-bg); }
+.toolbox.st-ok { background: var(--tool-success-bg); }
+.toolbox.st-err { background: var(--tool-error-bg); }
+.tb-line { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.tb-name { font-weight: 700; color: var(--text); flex: none; }
+.tb-arg {
+  font-family: var(--font-mono);
+  font-size: 11.8px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.toolbox .m-pre { background: transparent; border: none; padding: 0; }
+.tb-content {
+  margin: 7px 0 4px;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-2);
+}
+.tb-args { margin: 5px 0 6px; max-height: 260px; overflow: auto; }
+.tb-toggle { margin: 4px 0; }
+.tb-hint { color: var(--text-3); font-size: 11.3px; margin-top: 5px; cursor: pointer; }
+.tb-out {
+  font-family: var(--font-mono);
+  font-size: 11.6px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-2);
+  margin-top: 6px;
+  max-height: 260px;
+  overflow: hidden;
+}
+.tb-out.clickable { overflow: auto; cursor: pointer; }
+.tb-out.err { color: var(--st-failed); }
+.tb-time {
+  color: var(--text-3);
+  font-size: 11.3px;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+}
+
+/* 思考块（TUI：灰色斜体；前后各空一行 = 一个行高） */
+.tui-think {
+  color: var(--text-3);
+  font-style: italic;
+  font-size: 12.6px;
+  line-height: 1.55;
+  margin: 1.55em 0 1.55em 8px;
+  max-width: 92%;
+}
+.tui-think .md p:first-child { margin-top: 0; }
+.tui-think .md p:last-child { margin-bottom: 0; }
+/* assistant 正文（TUI 无气泡） */
+.tui-text { font-size: 13px; margin: 0.35em 0 0.35em 4px; }

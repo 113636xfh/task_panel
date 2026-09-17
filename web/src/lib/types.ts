@@ -1,6 +1,6 @@
 export type TaskStatus =
   | 'ready' | 'queued' | 'planning' | 'waiting_input' | 'executing' | 'blocked'
-  | 'testing' | 'awaiting_confirm' | 'interrupted' | 'done' | 'failed' | 'cancelled';
+  | 'testing' | 'awaiting_confirm' | 'interrupted' | 'paused' | 'done' | 'failed' | 'cancelled';
 
 export interface Board {
   id: string; name: string; created_at: number;
@@ -50,4 +50,5 @@ export interface Settings {
   workspacesBase: string; systemPrompt: string; promptUpdatedAt: number | null;
 }
 
-export interface Runtime { used: number; total: number; queue: number; waiting: number; blocked: number; awaiting: number; }
+export interface Runtime { used: number; total: number; queue: number; paused?: number; waiting: number; blocked: number; awaiting: number; }
+export interface Project { name: string; paths: string[]; tasks: number; active: number; }

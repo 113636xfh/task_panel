@@ -6,7 +6,7 @@ import { PROMPT_DEFAULTS } from './prompts.js';
 import { publish } from './bus.js';
 import { inventory, installToTask, removeTaskSkill } from './skills.js';
 import {
-  emitEvent, runtimeStats, answerTask, answerBlock, confirmTask, cancelTask, messageTask,
+  emitEvent, runtimeStats, answerTask, answerBlock, confirmTask, cancelTask, messageTask, pauseTask, resumeTask,
 } from './scheduler.js';
 import { runCmd, pickDirectory } from './util.js';
 
@@ -160,6 +160,24 @@ api.get('/tasks/all', (_req, res) => {
   res.json(rows.map(taskFromRow));
 });
 
+// 项目 = 工作目录的末段（看板与项目合并：首页 = 全部任务的大看板，/p/:name = 该项目看板）
+api.get('/projects', (_req, res) => {
+  const rows = db.prepare(
+    "SELECT workspace_path, COUNT(*) n, SUM(status IN ('planning','executing','testing','queued','interrupted','waiting_input','blocked','awaiting_confirm','paused')) active"
+    + ' FROM tasks GROUP BY workspace_path'
+  ).all() as { workspace_path: string; n: number; active: number | null }[];
+  const m = new Map<string, { name: string; paths: string[]; tasks: number; active: number }>();
+  for (const r of rows) {
+    const name = r.workspace_path.split(/[\\/]/).filter(Boolean).pop() || '—';
+    const e = m.get(name) ?? { name, paths: [], tasks: 0, active: 0 };
+    e.paths.push(r.workspace_path);
+    e.tasks += r.n;
+    e.active += Number(r.active ?? 0);
+    m.set(name, e);
+  }
+  res.json([...m.values()].sort((a, b) => b.tasks - a.tasks || a.name.localeCompare(b.name)));
+});
+
 api.get('/boards/:id/tasks', (req, res) => {
   const rows = db.prepare('SELECT * FROM tasks WHERE board_id=? ORDER BY created_at').all(req.params.id) as unknown as TaskRow[];
   res.json(rows.map(taskFromRow));
@@ -187,16 +205,16 @@ api.get('/tasks/:id/blocks', (req, res) => {
   res.json(rows.map((r) => ({ ...r, context: JSON.parse(r.context_json), options: JSON.parse(r.options_json) })));
 });
 
-api.post('/boards/:id/tasks', (req, res) => {
-  const b = db.prepare('SELECT * FROM boards WHERE id=?').get(req.params.id) as { id: string } | undefined;
-  if (!b) return res.status(404).json({ error: 'board not found' });
-  const body = req.body ?? {};
+// 建任务（公共逻辑）。boardId 对应的看板即「项目」（同名）。
+function createTaskInBoard(boardId: string, body: any): { status: number; result: any } {
+  const b = db.prepare('SELECT * FROM boards WHERE id=?').get(boardId) as { id: string } | undefined;
+  if (!b) return { status: 404, result: { error: 'board not found' } };
   const title = String(body.title ?? '').trim();
   const description = String(body.description ?? '').trim();
   const ws = body.workspace ?? {};
-  if (!title) return res.status(400).json({ error: '标题必填' });
-  if (!description) return res.status(400).json({ error: '描述必填' });
-  if (ws.mode !== 'fresh' && ws.mode !== 'shared') return res.status(400).json({ error: '工作目录必须选定（fresh 或 shared）' });
+  if (!title) return { status: 400, result: { error: '标题必填' } };
+  if (!description) return { status: 400, result: { error: '描述必填' } };
+  if (ws.mode !== 'fresh' && ws.mode !== 'shared') return { status: 400, result: { error: '工作目录必须选定（fresh 或 shared）' } };
 
   const settings = getSettings();
   let workspace: string;
@@ -205,7 +223,7 @@ api.post('/boards/:id/tasks', (req, res) => {
     workspace = path.join(settings.workspacesBase, raw);
   } else {
     const p = String(ws.path ?? '').trim();
-    if (!p || !fs.existsSync(p)) return res.status(400).json({ error: '指定的项目目录不存在' });
+    if (!p || !fs.existsSync(p)) return { status: 400, result: { error: '指定的项目目录不存在' } };
     workspace = p;
   }
 
@@ -239,7 +257,37 @@ api.post('/boards/:id/tasks', (req, res) => {
   }
   emitEvent(id, 'system', { text: `任务已创建（#${num}），待准备：不占槽位、不排队，点「开始」进入打磨队列` });
   publish('task.created', { taskId: id, boardId: b.id, num });
-  res.json({ id, num });
+  return { status: 200, result: { id, num } };
+}
+
+api.post('/boards/:id/tasks', (req, res) => {
+  const { status, result } = createTaskInBoard(req.params.id, req.body ?? {});
+  res.status(status).json(result);
+});
+
+// 无看板建任务：项目名 = 目录末段，自动关联/创建同名「看板」（数据模型不变，UI 不再暴露看板概念）
+api.post('/tasks', (req, res) => {
+  const body = req.body ?? {};
+  const ws = body.workspace ?? {};
+  const title = String(body.title ?? '').trim();
+  let proj = '';
+  if (ws.mode === 'fresh') {
+    proj = String(ws.name ?? `task-${title.slice(0, 24)}`).replace(/[\\/]/g, '-').trim() || 'untitled';
+  } else if (ws.mode === 'shared') {
+    const p = String(ws.path ?? '').trim();
+    if (!p || !fs.existsSync(p)) return res.status(400).json({ error: '指定的项目目录不存在' });
+    proj = p.split(/[\\/]/).filter(Boolean).pop() || '—';
+  } else {
+    return res.status(400).json({ error: '工作目录必须选定（fresh 或 shared）' });
+  }
+  let b = db.prepare('SELECT id FROM boards WHERE name=?').get(proj) as { id: string } | undefined;
+  if (!b) {
+    const bid = uid('b');
+    db.prepare('INSERT INTO boards (id, name, created_at) VALUES (?,?,?)').run(bid, proj, Date.now());
+    b = { id: bid };
+  }
+  const { status, result } = createTaskInBoard(b.id, body);
+  res.status(status).json(result);
 });
 
 // P3：待准备 → 手动开始（进入打磨队列）
@@ -302,6 +350,8 @@ api.patch('/tasks/:id', (req, res) => {
 
 api.post('/tasks/:id/cancel', (req, res) => res.json(cancelTask(req.params.id)));
 api.post('/tasks/:id/confirm', (req, res) => res.json(confirmTask(req.params.id)));
+api.post('/tasks/:id/pause', (req, res) => res.json(pauseTask(req.params.id)));
+api.post('/tasks/:id/resume', (req, res) => res.json(resumeTask(req.params.id)));
 api.post('/tasks/:id/answer', (req, res) => res.json(answerTask(req.params.id, req.body?.answers ?? {})));
 api.post('/tasks/:id/block-answer', (req, res) => res.json(answerBlock(req.params.id, String(req.body?.answer ?? ''))));
 api.post('/tasks/:id/message', (req, res) => {

@@ -8,7 +8,7 @@ import type { Task, TaskStatus } from '../lib/types';
 
 // P3 四阶段看板列：等待 / 打磨 / 执行 / 验收
 const COLS: { key: string; statuses: TaskStatus[] }[] = [
-  { key: 'wait', statuses: ['ready', 'queued'] },
+  { key: 'wait', statuses: ['ready', 'queued', 'paused'] },
   { key: 'plan', statuses: ['planning', 'waiting_input'] },
   { key: 'exec', statuses: ['executing', 'blocked', 'interrupted'] },
   { key: 'test', statuses: ['testing', 'awaiting_confirm', 'done'] },
@@ -28,6 +28,7 @@ const TONE: Record<string, string> = {
   interrupted: 'gray',
   testing: 'calm',
   awaiting_confirm: 'orange',
+  paused: 'orange',
   done: 'green',
 };
 
@@ -76,6 +77,16 @@ function KCard({ t, onNav }: { t: Task; onNav: () => void }) {
               onClick={() => api.start(t.id).catch((e) => toast(e.message, 'err'))}
             >
               <Play size={11} /> {tx('tbl.start')}
+            </button>
+          )}
+          {t.status === 'paused' && (
+            <button
+              className="btn primary mini"
+              data-testid="btn-resume"
+              title={tx('task.resume')}
+              onClick={() => api.resume(t.id).catch((e) => toast(e.message, 'err'))}
+            >
+              <Play size={11} /> {tx('task.resume')}
             </button>
           )}
           {t.status === 'awaiting_confirm' && (
@@ -151,7 +162,7 @@ export default function KanbanBoard({
                 <div className="kb-group" key={g.group}>
                   <div className="kb-group-h">{g.group}</div>
                   {g.items.map((x) => (
-                    <KCard key={x.id} t={x} onNav={() => nav(`/boards/${x.board_id}/tasks/${x.id}`)} />
+                    <KCard key={x.id} t={x} onNav={() => nav(`/p/${encodeURIComponent((x.workspace_path || '').split(/[\\/]/).filter(Boolean).pop() || '—')}/tasks/${x.id}`)} />
                   ))}
                 </div>
               ))}
