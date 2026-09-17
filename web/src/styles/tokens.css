@@ -7,7 +7,7 @@
 
   --sb: 232px; /* sidebar 宽 */
   --r-sm: 4px; --r-md: 6px; --r-lg: 10px;
-  --fs-scale: 1; /* 字体缩放（S/M/L），#root 用 zoom 整体缩放 */
+  --app-zoom: 1; /* 界面缩放（自适应屏幕 + S/M/L 微调），JS 计算 */
 
   /* 强调色（P3 默认：蓝） */
   --accent: #2f6feb;
@@ -99,8 +99,5 @@
   --accent-soft: rgba(113, 112, 255, 0.16);
 }
 
-/* P3：字体大小（S/M/L）—— #root 整体 zoom 缩放 */
-[data-fs='s'] { --fs-scale: 0.92; }
-[data-fs='m'] { --fs-scale: 1; }
-[data-fs='l'] { --fs-scale: 1.08; }
-#root { zoom: var(--fs-scale, 1); }
+/* P3：界面缩放 —— 基础值随屏幕自适应（JS 计算 --app-zoom：以 1440×900 为基准的 min(vw/1440, vh/900)），
+   S/M/L 为微调档位（×0.94 / ×1 / ×1.06）。#root 高度用 100vh/zoom 补偿，保证页面恒适配屏幕不滚动（见 app.css）。 */

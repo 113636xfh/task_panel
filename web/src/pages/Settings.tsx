@@ -1,9 +1,40 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Check, Save } from 'lucide-react';
 import { api } from '../lib/api';
 import { fmtDate } from '../lib/fmt';
 import { toast } from '../lib/toast';
 import { useI18n } from '../i18n';
+
+// 提示词输入框：不内部滚动，随内容自动长高（页面滚动）
+function AutoArea({
+  value,
+  onChange,
+  placeholder,
+  testid,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  testid?: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.max(el.scrollHeight, 110) + 'px';
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      className="inp mono tpl-area"
+      data-testid={testid}
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
 
 export default function Settings() {
   const { t } = useI18n();
@@ -63,6 +94,7 @@ export default function Settings() {
     document.documentElement.dataset.fs = v;
     localStorage.setItem('tp-fs', v);
     set('fontsize', v);
+    window.dispatchEvent(new Event('tp-fs-apply'));
   };
   const setThemeUi = (v: string) => {
     document.documentElement.dataset.theme = v;
@@ -244,47 +276,7 @@ export default function Settings() {
           </div>
         </div>
 
-        <div className="card skill-box" style={{ gridColumn: '1 / -1' }}>
-          <div className="card-h">
-            {t('set.tpl')}
-            <span style={{ color: 'var(--text-3)', fontSize: 11.5, fontWeight: 400 }}>{t('set.tpl.hint')}</span>
-          </div>
-          <div className="card-b">
-            {(['plan', 'exec', 'judge', 'rework'] as const).map((k) => (
-              <div key={k} style={{ marginBottom: 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                  <b style={{ fontSize: 12.5 }}>{t(`set.tpl.${k}`)}</b>
-                  <code style={{ fontSize: 11, color: 'var(--text-3)' }}>
-                    {k === 'plan' ? '{{title}} {{description}} {{acceptance}} {{test_cmd}} {{extra_prompt}} {{skills}} {{rework}}' : k === 'exec' ? '（静态模板，无占位符）' : k === 'judge' ? '{{test_cmd}} {{code}} {{items}}' : '{{msgs}}'}
-                  </code>
-                  <span style={{ flex: 1 }} />
-                  <button
-                    className="btn ghost sm"
-                    data-testid={`tpl-reset-${k}`}
-                    onClick={() => {
-                      const next = { ...(s.promptTemplates ?? {}) };
-                      delete next[k];
-                      set('promptTemplates', next);
-                      toast(t('set.tpl.resetDone'));
-                    }}
-                  >
-                    {t('set.tpl.reset')}
-                  </button>
-                </div>
-                <textarea
-                  className="inp mono"
-                  rows={4}
-                  data-testid={`tpl-${k}`}
-                  value={s.promptTemplates?.[k] ?? ''}
-                  placeholder={t('set.empty')}
-                  onChange={(e) => set('promptTemplates', { ...(s.promptTemplates ?? {}), [k]: e.target.value })}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="card skill-box" style={{ gridColumn: '1 / -1' }}>
+        <div className="card skill-box">
           <div className="card-h">
             {t('set.prompt')}
             <button className="btn ghost sm" onClick={() => setShowHist(!showHist)}>
@@ -292,7 +284,7 @@ export default function Settings() {
             </button>
           </div>
           <div className="card-b">
-            <textarea className="inp mono" rows={7} value={sp} onChange={(e) => setSp(e.target.value)} placeholder={t('set.prompt.ph')} />
+            <AutoArea value={sp} onChange={setSp} placeholder={t('set.prompt.ph')} />
             <div className="sp-note">{t('set.prompt.scope')}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
               <button className="btn primary" onClick={savePrompt}>
@@ -326,6 +318,44 @@ export default function Settings() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+
+        <div className="card skill-box" style={{ gridColumn: '1 / -1' }}>
+          <div className="card-h">
+            {t('set.tpl')}
+            <span style={{ color: 'var(--text-3)', fontSize: 11.5, fontWeight: 400 }}>{t('set.tpl.hint')}</span>
+          </div>
+          <div className="card-b">
+            {(['plan', 'exec', 'judge', 'rework'] as const).map((k) => (
+              <div key={k} style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                  <b style={{ fontSize: 12.5 }}>{t(`set.tpl.${k}`)}</b>
+                  <code style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                    {k === 'plan' ? '{{title}} {{description}} {{acceptance}} {{test_cmd}} {{extra_prompt}} {{skills}} {{rework}}' : k === 'exec' ? '（静态模板，无占位符）' : k === 'judge' ? '{{test_cmd}} {{code}} {{items}}' : '{{msgs}}'}
+                  </code>
+                  <span style={{ flex: 1 }} />
+                  <button
+                    className="btn ghost sm"
+                    data-testid={`tpl-reset-${k}`}
+                    onClick={() => {
+                      const next = { ...(s.promptTemplates ?? {}) };
+                      delete next[k];
+                      set('promptTemplates', next);
+                      toast(t('set.tpl.resetDone'));
+                    }}
+                  >
+                    {t('set.tpl.reset')}
+                  </button>
+                </div>
+                <AutoArea
+                  testid={`tpl-${k}`}
+                  value={s.promptTemplates?.[k] ?? ''}
+                  placeholder={t('set.empty')}
+                  onChange={(v) => set('promptTemplates', { ...(s.promptTemplates ?? {}), [k]: v })}
+                />
+              </div>
+            ))}
           </div>
         </div>
       </div>

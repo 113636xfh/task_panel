@@ -1,0 +1,10 @@
+import puppeteer from 'puppeteer-core';
+const EXE = process.env.TP_BROWSER || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
+const browser = await puppeteer.launch({ executablePath: EXE, headless: true });
+const page = await browser.newPage();
+await page.setViewport({ width: 1440, height: 900 });
+await page.goto('http://127.0.0.1:8787/settings', { waitUntil: 'networkidle0' });
+await new Promise(r => setTimeout(r, 900));
+await page.screenshot({ path: 'C:/Users/LittleSatellite233/AppData/Local/Temp/s-settings-final.png', fullPage: true });
+await browser.close();
+console.log('done');

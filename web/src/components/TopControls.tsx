@@ -16,10 +16,11 @@ export default function TopControls() {
     localStorage.setItem('tp-theme', theme);
   }, [theme]);
 
-  // P3：字体大小（S/M/L，循环切换；#root zoom 整体缩放）
+  // P3：字体大小（S/M/L 微调；基础缩放随屏幕自适应，TopControls 计算 --app-zoom）
   useEffect(() => {
     document.documentElement.dataset.fs = fs;
     localStorage.setItem('tp-fs', fs);
+    window.dispatchEvent(new Event('tp-fs-apply'));
   }, [fs]);
 
   // 设置页切换主题时同步（避免两处状态漂移）
@@ -27,6 +28,25 @@ export default function TopControls() {
     const h = () => setTheme(localStorage.getItem('tp-theme') ?? 'dark');
     window.addEventListener('tp-theme-apply', h);
     return () => window.removeEventListener('tp-theme-apply', h);
+  }, []);
+
+  // 界面缩放：基础值随屏幕自适应（以 1440×900 为基准），S/M/L 为微调档位；
+  // #root 高度用 100vh/zoom 补偿（见 app.css）→ 页面恒适配屏幕，不留白/不滚动
+  useEffect(() => {
+    const apply = () => {
+      const lvl = localStorage.getItem('tp-fs') ?? 'm';
+      const f = lvl === 's' ? 0.94 : lvl === 'l' ? 1.06 : 1;
+      const k = Math.min(window.innerWidth / 1440, window.innerHeight / 900);
+      const z = Math.min(1.5, Math.max(0.75, k)) * f;
+      document.documentElement.style.setProperty('--app-zoom', z.toFixed(3));
+    };
+    apply();
+    window.addEventListener('resize', apply);
+    window.addEventListener('tp-fs-apply', apply);
+    return () => {
+      window.removeEventListener('resize', apply);
+      window.removeEventListener('tp-fs-apply', apply);
+    };
   }, []);
 
   return (

@@ -374,7 +374,7 @@ export const zh: Record<string, string> = {
   'set.theme.light': '亮色',
   'set.theme.dark': '暗色',
   'set.fontsize': '字体大小',
-  'set.fontsize.hint': '整体界面缩放',
+  'set.fontsize.hint': '基础缩放随屏幕自适应，S/M/L 为微调档位',
   'set.fs.s': '小',
   'set.fs.m': '中',
   'set.fs.l': '大',

@@ -356,7 +356,7 @@ export const en: Record<string, string> = {
   'set.theme.light': 'Light',
   'set.theme.dark': 'Dark',
   'set.fontsize': 'Font size',
-  'set.fontsize.hint': 'Overall UI scale',
+  'set.fontsize.hint': 'Base scale auto-fits your screen; S/M/L are fine-tune steps',
   'set.fs.s': 'Small',
   'set.fs.m': 'Medium',
   'set.fs.l': 'Large',
