@@ -90,11 +90,12 @@ export default function Layout() {
           {t('nav.boards')}
         </NavLink>
 
-        {/* 项目（看板与项目合并：每个项目 = 一张看板） */}
+        {/* 项目（看板与项目合并：每个项目 = 一张看板；列表区单独滚动，底部三项常驻） */}
         <div className="sb-section" data-testid="sb-projects">
           <div className="sb-sec-h">
             <FolderKanban size={12} /> {t('sb.projects')}
           </div>
+          <div className="sb-list">
           {projects.map((p) => (
             <div
               key={p.name}
@@ -107,6 +108,7 @@ export default function Layout() {
               {p.active > 0 && <span style={{ color: 'var(--st-executing)', fontSize: 11 }} title={t('sb.active')}>●</span>}
             </div>
           ))}
+          </div>
         </div>
 
         <NavLink to="/history" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>

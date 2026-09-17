@@ -31,6 +31,7 @@ code, .mono { font-family: var(--font-mono); font-size: 0.92em; }
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   padding: 14px 10px 12px;
   gap: 2px;
 }
@@ -50,6 +51,7 @@ code, .mono { font-family: var(--font-mono); font-size: 0.92em; }
   padding: 7px 10px; border-radius: var(--r-md);
   color: var(--text-2); font-size: 13px; font-weight: 500;
   border: 1px solid transparent;
+  flex: none;
 }
 .nav-item:hover { background: var(--bg-hover); color: var(--text); }
 .nav-item.active { background: var(--accent-soft); color: var(--accent-hi); font-weight: 600; }
@@ -57,6 +59,7 @@ code, .mono { font-family: var(--font-mono); font-size: 0.92em; }
 
 .runtime-card {
   margin-top: auto;
+  flex: none;
   border: 1px solid var(--line);
   background: var(--bg-panel-2);
   border-radius: var(--r-lg);
@@ -894,7 +897,9 @@ input[type='number'].num-inp { min-width: 110px; }
   100% { transform: translateX(100%); }
 }
 /* 侧栏：看板列表 + 历史任务 */
-.sb-section { margin: 14px 10px 0; }
+.sb-section { margin: 14px 10px 0; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* 项目列表区单独滚动；底部三项(历史/技能/设置)+RUNTIME 恒显示 */
+.sb-list { flex: 1; min-height: 0; overflow-y: auto; }
 .sb-sec-h {
   display: flex;
   align-items: center;
@@ -1039,14 +1044,14 @@ input[type='number'].num-inp { min-width: 110px; }
 }
 /* --- 底部 1/4：动作区 --- */
 .td-actions {
-  height: 26vh;
-  min-height: 130px;
-  max-height: 320px;
+  flex: 0 1 auto; /* 高度随内容：有卡片(阻塞/中断)时展开，无卡片时让位给消息流 */
+  max-height: 340px;
   overflow: auto;
   border-top: 1px solid var(--line);
   background: var(--bg-panel);
   padding: 12px 18px;
 }
+.td-actions:empty { display: none; } /* 空时不占位 → 消息流用满 */
 .td-actions .alert-card { border-radius: var(--r-md); }
 .tabs-card { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .tabs { display: flex; gap: 4px; margin-bottom: 9px; flex: none; }
