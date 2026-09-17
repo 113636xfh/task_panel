@@ -108,8 +108,18 @@ async function run1() {
     const el = document.querySelector('[data-testid="task-row"][data-num="1"]');
     return el && el.dataset.status !== 'ready';
   }, { timeout: 10_000 });
-  // 打开任务详情
-  await page.click('[data-testid="task-row"][data-num="1"]');
+  // 卡片跨列移动（等待→打磨）时 React 重建 DOM 节点 → 稍候稳定 + 重试，避开竞态
+  await new Promise((r) => setTimeout(r, 500));
+  let opened = false;
+  for (let i = 0; i < 6 && !opened; i++) {
+    try {
+      await page.click('[data-testid="task-row"][data-num="1"]');
+      opened = true;
+    } catch {
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }
+  assert.ok(opened, '应能打开任务详情');
   await page.waitForSelector('[data-testid="status-badge"]', { visible: true });
   const badgeText = () => page.$eval('[data-testid="status-badge"]', (el) => el.textContent.trim());
   const badgeClass = () => page.$eval('[data-testid="status-badge"]', (el) => el.className);
