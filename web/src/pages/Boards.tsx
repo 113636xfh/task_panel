@@ -5,10 +5,10 @@ import { api } from '../lib/api';
 import { onEvent } from '../lib/ws';
 import { toast } from '../lib/toast';
 import { useI18n } from '../i18n';
-import PhaseTable from '../components/PhaseTable';
+import KanbanBoard from '../components/KanbanBoard';
 import type { Task } from '../lib/types';
 
-// P3：看板页 = 首页 = 跨项目总表（四阶段列；按项目分组）
+// P3：首页 = 四阶段看板（跨项目；小方框卡片，按项目分组，无文件路径）
 export default function Boards() {
   const { t } = useI18n();
   const [tasks, setTasks] = useState<Task[] | null>(null);
@@ -51,7 +51,7 @@ export default function Boards() {
       <div className="page-head">
         <h1>{t('boards.title')}</h1>
         <span className="sub">
-          {tasks ? `${tasks.length} ${t('boards.card.tasks')}` : '…'}
+          {tasks ? `${tasks.filter((x) => x.status !== 'failed' && x.status !== 'cancelled').length} ${t('boards.card.tasks')}` : '…'}
         </span>
         <span style={{ flex: 1 }} />
         {creating ? (
@@ -89,7 +89,7 @@ export default function Boards() {
           {t('boards.note')}
         </div>
       ) : (
-        <PhaseTable tasks={tasks} showBoard dataTestid="ptable-home" />
+        <KanbanBoard tasks={tasks} dataTestid="kanban-home" />
       )}
     </>
   );

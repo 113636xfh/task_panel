@@ -21,8 +21,10 @@ export const api = {
   blockAnswer: (id: string, answer: string) => req(`/api/tasks/${id}/block-answer`, { method: 'POST', body: JSON.stringify({ answer }) }),
   confirm: (id: string) => req(`/api/tasks/${id}/confirm`, { method: 'POST' }),
   start: (id: string) => req(`/api/tasks/${id}/start`, { method: 'POST' }),
-  rework: (id: string, body: { text: string; images?: { name: string; data: string }[] }) =>
+  rework: (id: string, body: { text: string; images?: number[] }) =>
     req(`/api/tasks/${id}/rework`, { method: 'POST', body: JSON.stringify(body) }),
+  // 原生目录选择器（选已有项目目录；取消 → {cancelled:true}）
+  pickDirectory: (cwd = '') => req<{ path?: string; cancelled?: boolean } | { error: string }>('/api/fs/pick-directory', { method: 'POST', body: JSON.stringify({ cwd }) }),
   cancel: (id: string) => req(`/api/tasks/${id}/cancel`, { method: 'POST' }),
   message: (id: string, text: string, images?: number[]) => req(`/api/tasks/${id}/message`, { method: 'POST', body: JSON.stringify({ text, images }) }),
   // task images（长提示词附图）

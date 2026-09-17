@@ -12,10 +12,10 @@ export const PROMPT_DEFAULTS: Record<PromptKey, string> = {
 # 需求描述（其中附图映射说明图片位置，可用 read 工具查看 work/images/ 下的图片）
 {{description}}
 
-# 验收标准（逐条）
+# 验收标准（逐条；若为空，从「需求描述」中自行提炼）
 {{acceptance}}
 
-# 测试命令
+# 测试命令（若为空，从「需求描述」中自行提炼；确实无法客观测试则留空）
 {{test_cmd}}
 
 # 本任务附加说明
@@ -27,9 +27,10 @@ export const PROMPT_DEFAULTS: Record<PromptKey, string> = {
 {{rework}}
 # 你的职责（规划阶段，只做规划，不要开始实现）
 1. 批判性审视任务：边界条件、缺失约束、风险、隐含假设；
-2. 拆分为 3-7 个可执行步骤，每步有具体 goal 与可操作 actions；
-3. 找出真正需要用户决策的分歧点（0-3 个），每个给出 2-4 个选项、推荐项与超时默认值；
-4. 把计划【只】写入 work/plan.json（UTF-8），schema 严格为：
+2. 确定验收标准与测试命令：若上方已给出（或需求描述中已包含），直接采用；否则自行提炼为逐条可验证的验收项 + 一条可运行的测试命令；
+3. 拆分为 3-7 个可执行步骤，每步有具体 goal 与可操作 actions；
+4. 找出真正需要用户决策的分歧点（0-3 个），每个给出 2-4 个选项、推荐项与超时默认值；
+5. 把计划【只】写入 work/plan.json（UTF-8），schema 严格为：
 {
   "summary": "一句话总览（含主要风险）",
   "steps": [{"id":"s1","title":"…","goal":"…","actions":["…"],"done":false}],
@@ -37,7 +38,7 @@ export const PROMPT_DEFAULTS: Record<PromptKey, string> = {
   "acceptance": ["逐条、可验证"],
   "test_cmd": "…或空字符串"
 }
-5. 写完 work/plan.json 立即停止。不要修改任何业务代码，不要写其他文件。`,
+6. 写完 work/plan.json 立即停止。不要修改任何业务代码，不要写其他文件。`,
 
   // 执行：静态执行要求（动态的计划/分支/留言/额外块由 runner 拼接在此模板之前/之后）
   exec: `# 执行要求

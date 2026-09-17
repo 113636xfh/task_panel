@@ -8,9 +8,12 @@ import { inventory, installToTask, removeTaskSkill } from './skills.js';
 import {
   emitEvent, runtimeStats, answerTask, answerBlock, confirmTask, cancelTask, messageTask,
 } from './scheduler.js';
+import { runCmd, pickDirectory } from './util.js';
+
 import type { TaskRow } from './runner.js';
 
 export const api = express.Router();
+
 const json = (v: unknown) => JSON.parse(JSON.stringify(v ?? null));
 
 // ---------------- task images（长提示词附图：自动编号 + 引用 + 回传） ----------------
@@ -419,3 +422,15 @@ function emitEventGlobal(text: string) {
 }
 
 api.get('/runtime', (_req, res) => res.json(runtimeStats()));
+
+// 原生目录选择器（创建任务时选已有项目目录；Windows 文件管理器 / Linux zenity|kdialog / mac Finder）
+api.post('/fs/pick-directory', async (req, res) => {
+  const cwd = String(req.body?.cwd ?? '');
+  try {
+    const p = await pickDirectory(cwd);
+    if (!p) return res.json({ cancelled: true });
+    res.json({ ok: true, path: p });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message ?? String(e) });
+  }
+});

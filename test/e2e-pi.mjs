@@ -51,6 +51,17 @@ async function modelUp() {
     if (!fs.existsSync(file)) throw new Error(`交付物缺失: ${file}`);
     console.log('交付物存在:', file, '→', JSON.stringify(fs.readFileSync(file, 'utf8').trim()));
 
+    // P3 完整推理记录：事件流应含系统提示词 + 含思维链的 message
+    const evs = await a.get(`/tasks/${t.id}/events?since=0`);
+    const sysPrompt = evs.find((e) => e.kind === 'system_prompt');
+    if (!sysPrompt) throw new Error('缺少 system_prompt 事件（完整推理记录未落盘）');
+    const msgs = evs.filter((e) => e.kind === 'message');
+    if (!msgs.length) throw new Error('缺少 message 事件（完整推理记录未落盘）');
+    const hasThinking = msgs.some((e) => (e.payload?.parts ?? []).some((p) => p.type === 'thinking' && (p.text || '').trim()));
+    const hasTool = msgs.some((e) => (e.payload?.parts ?? []).some((p) => p.type === 'toolCall' || p.type === 'toolResult' || p.type === 'tool'));
+    console.log(`完整推理记录: system_prompt ${sysPrompt.payload?.text?.length ?? 0} 字符; message ${msgs.length} 条; 思维链=${hasThinking} 工具=${hasTool}`);
+    if (!hasThinking) throw new Error('message 事件未含非空思维链（模型应输出 thinking）');
+
     await a.post(`/tasks/${t.id}/confirm`);
     const fin = await a.get(`/tasks/${t.id}`);
     if (fin.status !== 'done') throw new Error(`确认后状态异常: ${fin.status}`);

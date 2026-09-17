@@ -316,48 +316,6 @@ function EvRow({ ev, plan, imgBase, onPreview }: { ev: TaskEvent; plan: Plan | n
   }
 }
 
-// 返工框（done / awaiting_confirm 时可用；文本打回，复用任务会话）
-function ReworkBox({ taskId, onDone }: { taskId: string; onDone: () => void }) {
-  const { t } = useI18n();
-  const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  async function submit() {
-    if (!text.trim() || busy) return;
-    setBusy(true);
-    try {
-      await api.rework(taskId, { text: text.trim() });
-      onDone();
-      toast(t('rework.sent'));
-    } catch (e: any) {
-      toast(e.message, 'err');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="alert-card alert-confirm" data-testid="rework-box">
-      <div className="ac-title">
-        <RotateCcw size={14} /> {t('rework.title')}
-      </div>
-      <textarea
-        className="inp"
-        data-testid="input-rework"
-        rows={4}
-        placeholder={t('rework.ph')}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-      />
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-        <button className="btn primary" data-testid="btn-rework-submit" disabled={busy || !text.trim()} onClick={submit}>
-          {busy ? t('loading') : t('rework.submit')}
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export default function TaskDetail() {
   const { taskId = '' } = useParams();
   const id = taskId;
@@ -371,9 +329,10 @@ export default function TaskDetail() {
   const [mode, setMode] = useState<'summary' | 'full'>('summary');
   const [tab, setTab] = useState<'plan' | 'accept' | 'outputs'>('outputs');
   const [descOpen, setDescOpen] = useState(false);
-  const [reworkOpen, setReworkOpen] = useState(false);
+  const [reworkMode, setReworkMode] = useState(false);
   const [msg, setMsg] = useState('');
   const [longMode, setLongMode] = useState(false);
+  const longTextRef = useRef<HTMLTextAreaElement>(null);
   const [draftImgs, setDraftImgs] = useState<{ num: number; name: string; path: string }[]>([]);
   const imgFileRef = useRef<HTMLInputElement>(null);
   const imgBase = `/api/tasks/${id}/file`;
@@ -468,14 +427,37 @@ export default function TaskDetail() {
   async function sendMsg() {
     const txt = msg.trim();
     if (!txt) return;
+    // 返工模式（done / awaiting_confirm）：同一输入框走 rework 通道，复用任务会话
+    const t0 = task;
+    const isRework = reworkMode && !!t0 && (t0.status === 'done' || t0.status === 'awaiting_confirm');
     try {
-      await api.message(id, txt, draftImgs.map((i) => i.num));
+      if (isRework) {
+        await api.rework(id, { text: txt, images: draftImgs.map((i) => i.num) });
+        toast(t('rework.sent'));
+        setReworkMode(false);
+        setLongMode(false);
+        reloadTask();
+      } else {
+        await api.message(id, txt, draftImgs.map((i) => i.num));
+        setLongMode(false);
+      }
       setMsg('');
       setDraftImgs([]);
-      setLongMode(false);
     } catch (e: any) {
       toast(e.message, 'err');
     }
+  }
+
+  // 打开返工：直接展开长提示词输入框（不另开框）；再点一次 = 取消
+  function toggleRework() {
+    if (reworkMode) {
+      setReworkMode(false);
+      setLongMode(false);
+      return;
+    }
+    setReworkMode(true);
+    setLongMode(true);
+    setTimeout(() => longTextRef.current?.focus(), 30);
   }
 
   async function pickImgs(files: FileList | null) {
@@ -552,9 +534,21 @@ export default function TaskDetail() {
             <option value={3}>P3</option>
           </select>
           <span style={{ flex: 1 }} />
-          {canRework && !reworkOpen && (
-            <button className="btn ghost sm" data-testid="btn-rework" onClick={() => setReworkOpen(true)}>
-              <RotateCcw size={13} /> {t('act.rework')}
+          {canRework && (
+            <button
+              className={`btn ${reworkMode ? 'primary' : 'ghost'} sm`}
+              data-testid="btn-rework"
+              onClick={toggleRework}
+            >
+              {reworkMode ? (
+                <>
+                  <X size={13} /> {t('rework.cancel')}
+                </>
+              ) : (
+                <>
+                  <RotateCcw size={13} /> {t('act.rework')}
+                </>
+              )}
             </button>
           )}
           {task.status !== 'done' && (
@@ -627,6 +621,11 @@ export default function TaskDetail() {
           </button>
         </div>
         <div className="feed" data-testid="feed" ref={feedRef}>
+          {mode === 'full' && !events.some((e) => ['message', 'system_prompt', 'subagent'].includes(e.kind)) && (
+            <div className="full-hint">
+              {t('feed.fullOld')}
+            </div>
+          )}
           {shownEvents.length === 0 && (
             <div style={{ color: 'var(--text-3)', fontSize: 12.5, textAlign: 'center', padding: 18 }}>{t('feed.empty')}</div>
           )}
@@ -650,15 +649,7 @@ export default function TaskDetail() {
 
       {/* ===== 底部 1/4：动作区（状态卡 / 计划·验收·产物） ===== */}
       <div className="td-actions">
-        {reworkOpen && canRework ? (
-          <ReworkBox
-            taskId={id}
-            onDone={() => {
-              setReworkOpen(false);
-              reloadTask();
-            }}
-          />
-        ) : task.status === 'blocked' && openBlock ? (
+        {task.status === 'blocked' && openBlock ? (
           <div className="alert-card alert-block">
             <div className="ac-title">
               <OctagonAlert size={14} /> {t('block.title')}
@@ -784,7 +775,7 @@ export default function TaskDetail() {
               >
                 <Check size={14} /> {t('confirm.btn')}
               </button>
-              <button className="btn ghost" data-testid="btn-rework" onClick={() => setReworkOpen(true)}>
+              <button className="btn ghost" data-testid="btn-rework" onClick={toggleRework}>
                 <RotateCcw size={13} /> {t('confirm.rework')}
               </button>
             </div>
@@ -926,7 +917,12 @@ export default function TaskDetail() {
         {longMode ? (
           <div className="steer-long">
             <div className="steer-long-head">
-              <span className="sl-title">{t('feed.long.title')}</span>
+              <span className="sl-title">{reworkMode ? t('rework.title') : t('feed.long.title')}</span>
+              {reworkMode && (
+                <button className="btn ghost sm" title={t('rework.cancel')} data-testid="btn-rework-cancel" onClick={() => { setReworkMode(false); setLongMode(false); }}>
+                  <X size={13} /> {t('rework.cancel')}
+                </button>
+              )}
               <button className="btn ghost sm" title={t('img.attach')} onClick={() => imgFileRef.current?.click()}>
                 <ImagePlus size={14} /> {t('img.attach')}
               </button>
@@ -938,8 +934,9 @@ export default function TaskDetail() {
             <textarea
               className="inp"
               data-testid="input-msg-long"
-              rows={5}
-              placeholder={t('feed.steerPh.long')}
+              ref={longTextRef}
+              rows={6}
+              placeholder={reworkMode ? t('rework.ph') : t('feed.steerPh.long')}
               value={msg}
               onChange={(e) => setMsg(e.target.value)}
             />
@@ -956,10 +953,10 @@ export default function TaskDetail() {
                 ))}
               </div>
             )}
-            <div className="steer-hint">{t('img.hint')}</div>
+            <div className="steer-hint">{reworkMode ? t('rework.hint') : t('img.hint')}</div>
             <div className="steer-row" style={{ marginTop: 6 }}>
               <button className="btn primary" data-testid="btn-msg-send-long" onClick={sendMsg} disabled={!msg.trim()}>
-                <Send size={13} /> {t('feed.send')}
+                <Send size={13} /> {reworkMode ? t('rework.submit') : t('feed.send')}
               </button>
             </div>
           </div>
