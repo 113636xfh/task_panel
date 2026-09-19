@@ -485,6 +485,17 @@ export default function TaskDetail() {
   const [preview, setPreview] = useState<{ name: string; path: string } | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const lastSeq = useRef(0);
+  // 「贴底」跟随：仅在用户已靠近底部时才自动滚底；用户上滑看历史时不强拉
+  const stickRef = useRef(true);
+  const onFeedScroll = () => {
+    const el = feedRef.current;
+    if (!el) return;
+    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
+  const stickScroll = () => {
+    const el = feedRef.current;
+    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
+  };
 
   const reloadTask = () => api.task(id).then(setTask).catch(() => {});
   const loadEvents = (since = 0) =>
@@ -542,13 +553,12 @@ export default function TaskDetail() {
   }, [id]);
 
   useEffect(() => {
-    const el = feedRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    stickScroll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events.length, mode, feedFilter]);
-  // 实时思维流增长时跟随滚动
+  // 实时思维流增长时跟随滚动（同样只在贴底时）
   useEffect(() => {
-    const el = feedRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    stickScroll();
   }, [live]);
 
   const openBlock = useMemo(() => blocks.find((b) => b.status === 'open') ?? null, [blocks]);
@@ -822,7 +832,7 @@ export default function TaskDetail() {
       <div className="td-main">
       {/* ===== 消息流（唯一滚动区；feed 控件已并入头部第二行） ===== */}
       <div className="td-feed">
-        <div className="feed" data-testid="feed" ref={feedRef}>
+        <div className="feed" data-testid="feed" ref={feedRef} onScroll={onFeedScroll}>
           {mode === 'full' && !events.some((e) => ['message', 'system_prompt', 'subagent'].includes(e.kind)) && (
             <div className="full-hint">
               {t('feed.fullOld')}
