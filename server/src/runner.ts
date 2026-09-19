@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { db, getSettings } from './db.js';
 import { PiSession, type RpcEvent } from './executor.js';
+import { publish } from './bus.js';
 import { getPromptTpl, renderTemplate } from './prompts.js';
 import { fileURLToPath } from 'node:url';
 
@@ -248,6 +249,9 @@ export class TaskRunner {
   private execStarted = false;
   private blockBaseline = 0;
   private lastTestAt = 0;
+  /** 当前在飞消息的增量累积（message_update）：message_end 后清空；中断时落库为 partial 消息 */
+  private partialThink = '';
+  private partialText = '';
   /** 当前回合注入 prompt 的标签（全部模式下区分「系统注入」与用户消息）；user 消息消费后置空 */
   private promptTag = '';
   /** P3：槽位状态提供（调度器注入；sub agent 违反软约束时告警） */
@@ -288,6 +292,7 @@ export class TaskRunner {
 
   stop() {
     this.released = true;
+    this.flushPartial();
     this.clearWatchers();
     const s = this.sess;
     if (s && !s.exited) {
@@ -344,7 +349,20 @@ export class TaskRunner {
     this.sess.spawn();
   }
 
+  /** 中断（暂停/阻塞/失败/退出）时，未走完的消息收不到 message_end ——
+   * 把已累积的思考/文本增量落库为 partial 消息，否则思维链在暂停后就丢了 */
+  private flushPartial() {
+    if (!this.partialThink && !this.partialText) return;
+    const parts: { type: string; text: string }[] = [];
+    if (this.partialThink) parts.push({ type: 'thinking', text: this.partialThink });
+    if (this.partialText) parts.push({ type: 'text', text: this.partialText });
+    this.emit(this.t.id, 'message', { role: 'assistant', parts, partial: true, injected: 'partial' });
+    this.partialThink = '';
+    this.partialText = '';
+  }
+
   private closeSession() {
+    this.flushPartial();
     const s = this.sess;
     this.sess = null;
     if (s && !s.exited) s.kill();
@@ -353,6 +371,21 @@ export class TaskRunner {
   private onPiEvent(ev: RpcEvent) {
     if (this.released) return;
     const t = this.t;
+    // 实时流：pi 的 message_update（thinking_delta / text_delta）→ 只广播不落库，
+    // 完整内容由 message_end 的 'message' 事件持久化
+    if (ev.type === 'message_update') {
+      const d = ev.assistantMessageEvent as { type?: string; contentIndex?: number; delta?: string } | undefined;
+      if (d && typeof d.delta === 'string' && d.delta) {
+        if (d.type === 'thinking_delta') {
+          this.partialThink += d.delta;
+          publish('task.stream', { taskId: t.id, block: 'thinking', idx: d.contentIndex ?? 0, delta: d.delta });
+        } else if (d.type === 'text_delta') {
+          this.partialText += d.delta;
+          publish('task.stream', { taskId: t.id, block: 'text', idx: d.contentIndex ?? 0, delta: d.delta });
+        }
+      }
+      return;
+    }
     if (ev.type === 'message_end') {
       const m = ev.message as { role?: string; content?: { type?: string; text?: string }[]; toolName?: string; isError?: boolean } | undefined;
       if (m?.role === 'assistant' && Array.isArray(m.content)) {
@@ -390,6 +423,11 @@ export class TaskRunner {
           }
           this.emit(t.id, 'message', payload);
         }
+      }
+      // 完整消息已落库：清空中飞增量（下一轮从空开始累积）
+      if (m?.role === 'assistant') {
+        this.partialThink = '';
+        this.partialText = '';
       }
     } else if (ev.type === 'tool_execution_start') {
       const name = String(ev.toolName ?? 'tool');

@@ -65,6 +65,9 @@ export const en: Record<string, string> = {
   'tbl.readyHint': 'Ready — press Start on the board to begin',
   'tbl.start': 'Start',
   'tbl.retry': 'Retry',
+  'ev.thinkLabel': 'Thinking',
+  'live.thinking': 'Thinking',
+  'live.text': 'Replying',
   'tbl.confirm': 'Confirm',
   'tbl.empty': 'No tasks yet',
 

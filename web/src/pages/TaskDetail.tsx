@@ -28,6 +28,7 @@ import {
   ChevronDown,
   Pause,
   Play,
+  Brain,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { onEvent } from '../lib/ws';
@@ -369,6 +370,27 @@ function EvRow({ ev, plan, imgBase, onPreview }: { ev: TaskEvent; plan: Plan | n
           {time}
         </div>
       );
+    case 'message': {
+      // full 模式由 buildUnits/AstUnit 渲染完整内容；summary 模式只补思维链
+      //（正文由同回合的 assistant 行承载，避免重复）
+      const thinks = ((p.parts ?? []) as any[]).filter((c: any) => c.type === 'thinking' && c.text);
+      if (!thinks.length) return null;
+      const text = thinks.map((c: any) => c.text).join('\n\n');
+      return (
+        <details className="ev ev-think" open>
+          <summary>
+            {time}
+            <Brain size={13} className="ev-ico" />
+            <span className="ev-think-label">
+              {t('ev.thinkLabel')} · {text.length > 999 ? `${(text.length / 1000).toFixed(1)}k` : text.length}
+            </span>
+          </summary>
+          <div className="tui-think ev-think-body">
+            <MD text={text} />
+          </div>
+        </details>
+      );
+    }
     case 'block':
       return (
         <div className="ev ev-block">
@@ -443,6 +465,8 @@ export default function TaskDetail() {
   const [events, setEvents] = useState<TaskEvent[]>([]);
   const [blocks, setBlocks] = useState<BlockItem[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
+  // 实时流：pi 思维/文本增量（task.stream，不落库；message_end 后由持久化事件取代）
+  const [live, setLive] = useState<{ key: string; kind: 'thinking' | 'text'; text: string }[]>([]);
   const [feedFilter, setFeedFilter] = useState('all');
   const [mode, setMode] = useState<'summary' | 'full'>('summary');
   const [tab, setTab] = useState<'plan' | 'accept' | 'outputs'>('outputs');
@@ -478,6 +502,7 @@ export default function TaskDetail() {
   };
 
   useEffect(() => {
+    setLive([]);
     reloadTask();
     loadEvents();
     loadExtra();
@@ -490,8 +515,23 @@ export default function TaskDetail() {
           lastSeq.current = e.seq;
           setEvents((x) => (x.some((z) => z.seq === e.seq) ? x : [...x, e]));
         }
+        if (e?.kind === 'message') setLive([]); // 完整消息已落库 → 实时流块让位
         if (e?.kind === 'block') loadExtra();
         if (e?.kind === 'asset') api.assets(id).then(setAssets).catch(() => {});
+      }
+      if (ev.kind === 'task.stream') {
+        const s = ev.payload;
+        if (Date.now() - ev.ts > 8000) return; // 重连重放的陈旧增量丢弃
+        const key = `${s.block}:${s.idx ?? 0}`;
+        setLive((prev) => {
+          const i = prev.findIndex((b) => b.key === key);
+          if (i >= 0) {
+            const nxt = prev.slice();
+            nxt[i] = { ...nxt[i], text: nxt[i].text + s.delta };
+            return nxt;
+          }
+          return [...prev, { key, kind: s.block, text: s.delta }];
+        });
       }
       if (ev.kind === 'task.status' || ev.kind === 'task.user_message') reloadTask();
     });
@@ -503,6 +543,11 @@ export default function TaskDetail() {
     const el = feedRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [events.length, mode, feedFilter]);
+  // 实时思维流增长时跟随滚动
+  useEffect(() => {
+    const el = feedRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [live]);
 
   const openBlock = useMemo(() => blocks.find((b) => b.status === 'open') ?? null, [blocks]);
 
@@ -775,6 +820,18 @@ export default function TaskDetail() {
                   <EvRow ev={ev} plan={task.plan} imgBase={imgBase} onPreview={setPreview} />
                 </div>
               ))}
+          {live.length > 0 && (
+            <div className="live-stream" data-testid="live-stream">
+              {live.map((b) => (
+                <div key={b.key} className={b.kind === 'thinking' ? 'tui-think live-block' : 'tui-text live-block'}>
+                  <span className="live-label">
+                    {b.kind === 'thinking' ? t('live.thinking') : t('live.text')}…
+                  </span>
+                  <MD text={b.text} />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

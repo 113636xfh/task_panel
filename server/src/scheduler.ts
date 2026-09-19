@@ -260,40 +260,55 @@ export function releaseSingleton() {
 /**
  * 启动时清理孤儿 runner 进程：旧实例被硬杀（taskkill /F、断电）后遗留的
  * `pi --name taskpanel-*` 子进程仍在跑（继续向模型服务发请求）。杀掉它们的整棵进程树。
+ * 安全边界：只杀「不属于本进程树」的候选（多实例并存时不误伤兄弟实例的活跃 runner）。
  */
 export function killOrphanRunners() {
-  const pids: number[] = [];
+  const rows: { pid: number; parent: number }[] = [];
   try {
     if (process.platform === 'win32') {
       const out = execFileSync(
         'powershell',
         ['-NoProfile', '-Command',
-          'Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like \'*--name taskpanel-*\' } | ForEach-Object { $_.ProcessId }'],
+          'Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like \'*--name taskpanel-*\' } | ForEach-Object { "{0},{1}" -f $_.ProcessId, $_.ParentProcessId }'],
         { windowsHide: true, timeout: 20_000, encoding: 'utf8' }
       );
       for (const s of out.split(/\r?\n/)) {
-        const n = Number(s.trim());
-        if (Number.isFinite(n) && n > 0 && n !== process.pid) pids.push(n);
+        const [p, pp] = s.split(',').map((x) => Number(x.trim()));
+        if (Number.isFinite(p) && p > 0 && p !== process.pid) rows.push({ pid: p, parent: Number.isFinite(pp) ? pp : 0 });
       }
     } else {
-      const out = execFileSync('ps', ['ww', '-o', 'pid=,command='], { timeout: 20_000, encoding: 'utf8' });
+      const out = execFileSync('ps', ['ww', '-o', 'pid=,ppid=,command='], { timeout: 20_000, encoding: 'utf8' });
       for (const line of out.split('\n')) {
         if (!line.includes('taskpanel-')) continue;
-        const n = Number(line.trim().split(/\s+/)[0]);
-        if (Number.isFinite(n) && n > 0 && n !== process.pid) pids.push(n);
+        const [p, pp] = line.trim().split(/\s+/).map(Number);
+        if (Number.isFinite(p) && p > 0 && p !== process.pid) rows.push({ pid: p, parent: pp || 0 });
       }
     }
   } catch (e) {
     console.warn('[task-panel] 孤儿进程扫描失败：', String(e));
     return;
   }
-  for (const pid of pids) {
+  const parOf = new Map(rows.map((r) => [r.pid, r.parent]));
+  const inOurTree = (pid: number): boolean => {
+    let cur = pid;
+    for (let i = 0; i < 20; i++) {
+      if (cur === process.pid) return true;
+      cur = parOf.get(cur) ?? 0;
+      if (!cur) return false;
+    }
+    return false;
+  };
+  const orphans = rows.filter((r) => !inOurTree(r.pid)).map((r) => r.pid);
+  const orphanSet = new Set(orphans);
+  // 只杀孤儿树的根（父不在孤儿集合内），taskkill /t 连带整棵树
+  const roots = orphans.filter((pid) => !orphanSet.has(parOf.get(pid) ?? 0));
+  for (const pid of roots) {
     try {
       if (process.platform === 'win32') spawn('taskkill', ['/pid', String(pid), '/t', '/f'], { windowsHide: true });
       else process.kill(pid, 'SIGKILL');
     } catch { /* 忽略 */ }
   }
-  if (pids.length) console.log(`[task-panel] 已清理孤儿 runner 进程: ${pids.join(', ')}`);
+  if (roots.length) console.log(`[task-panel] 已清理孤儿 runner 进程: ${roots.join(', ')}`);
 }
 
 // ---------------- 服务重启恢复：孤儿任务转 interrupted ----------------

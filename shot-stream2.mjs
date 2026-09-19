@@ -1,0 +1,13 @@
+import puppeteer from 'puppeteer-core';
+const b = await puppeteer.launch({ headless: 'new', executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' });
+const p = await b.newPage();
+await p.setViewport({ width: 1440, height: 900 });
+await p.goto('http://127.0.0.1:8787/p/str-mqk9z8j/tasks/t-mu8c670e-5mmrr8', { waitUntil: 'networkidle2' }).catch(() => {});
+await p.waitForSelector('[data-testid="feed"]', { timeout: 15000 });
+await p.select('[data-testid="feed-filter"]', 'full');
+await new Promise(r => setTimeout(r, 800));
+await p.evaluate(() => { const t = document.querySelector('[data-testid="think-block"]'); t?.scrollIntoView({ block: 'center' }); });
+await new Promise(r => setTimeout(r, 500));
+await p.screenshot({ path: 'C:/tmp/shot-stream-think.png' });
+await b.close();
+console.log('ok');
