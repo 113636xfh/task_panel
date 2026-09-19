@@ -5,7 +5,7 @@ import { api } from '../lib/api';
 import { onEvent } from '../lib/ws';
 import { useI18n } from '../i18n';
 import KanbanBoard from '../components/KanbanBoard';
-import NewTaskModal, { type SkillItem } from '../components/NewTaskModal';
+import NewTaskModal from '../components/NewTaskModal';
 import type { Task } from '../lib/types';
 
 // 首页 = 所有项目全部任务的大看板（四阶段列，按项目分组）
@@ -13,20 +13,11 @@ export default function Boards() {
   const { t } = useI18n();
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [showNew, setShowNew] = useState(false);
-  const [skills, setSkills] = useState<SkillItem[]>([]);
   const [sp, setSp] = useSearchParams();
 
   const load = () => api.tasksAll().then(setTasks).catch(() => {});
   useEffect(() => {
     load();
-    api.skills()
-      .then((inv) => {
-        const g: any[] = [...inv.global.skills, ...inv.global.extensions];
-        const p: any[] = inv.projects.flatMap((x: any) => [...x.skills, ...x.extensions]);
-        const seen = new Set<string>();
-        setSkills([...g, ...p].filter((s) => (seen.has(s.name) ? false : (seen.add(s.name), true))));
-      })
-      .catch(() => {});
     return onEvent((ev) => {
       if (['task.status', 'task.created', 'boards.changed', 'task.event', 'task.deleted'].includes(ev.kind)) load();
     });
@@ -66,7 +57,7 @@ export default function Boards() {
         <KanbanBoard tasks={tasks} dataTestid="kanban-home" />
       )}
 
-      {showNew && <NewTaskModal skills={skills} onClose={() => setShowNew(false)} onCreated={load} />}
+      {showNew && <NewTaskModal onClose={() => setShowNew(false)} onCreated={load} />}
     </>
   );
 }

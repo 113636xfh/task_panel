@@ -35,6 +35,10 @@ export const DEFAULT_SETTINGS = {
 {
   const cols = (db.prepare('PRAGMA table_info(tasks)').all() as { name: string }[]).map((c) => c.name);
   if (!cols.includes('context_window')) db.exec('ALTER TABLE tasks ADD COLUMN context_window INTEGER NOT NULL DEFAULT 0');
+  // 上下文空间监控：pi get_session_stats 的 contextUsage + 压缩次数
+  if (!cols.includes('ctx_tokens')) db.exec('ALTER TABLE tasks ADD COLUMN ctx_tokens INTEGER NOT NULL DEFAULT 0');
+  if (!cols.includes('ctx_percent')) db.exec('ALTER TABLE tasks ADD COLUMN ctx_percent REAL NOT NULL DEFAULT 0');
+  if (!cols.includes('compactions')) db.exec('ALTER TABLE tasks ADD COLUMN compactions INTEGER NOT NULL DEFAULT 0');
 }
 
 export function getSettings() {

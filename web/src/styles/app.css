@@ -201,6 +201,28 @@ select.inp { appearance: auto; }
 }
 .seg button:last-child { border-right: none; }
 .seg button.on { background: var(--accent-soft); color: var(--accent-hi); }
+/* 分段控件占满一行（新建弹窗高级设置） */
+.seg-block { display: flex; width: 100%; }
+.seg-block button { flex: 1; padding: 8px 8px; }
+/* 附加技能/扩展文件选择 */
+.file-pick {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 12px; cursor: pointer;
+  border: 1px dashed var(--line-strong); border-radius: var(--r-md);
+  color: var(--text-2); font-size: 12.5px;
+}
+.file-pick:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.file-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 6px 3px 9px; border: 1px solid var(--line);
+  border-radius: 20px; background: var(--bg-panel); font-size: 12px;
+}
+.file-chip b { font-weight: 600; }
+.file-chip .chip-x {
+  display: inline-flex; border: none; background: transparent; cursor: pointer;
+  color: var(--text-3); padding: 2px; border-radius: 50%;
+}
+.file-chip .chip-x:hover { color: var(--red); background: var(--red-soft); }
 
 /* ============ 看板列表 ============ */
 .page-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
@@ -1090,6 +1112,18 @@ input[type='number'].num-inp { min-width: 110px; }
   text-overflow: ellipsis;
   max-width: 60%;
 }
+/* 状态条：上下文使用比例 + 压缩次数 */
+.td-statusline .sl-ctx {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--mono); font-size: 11.3px; color: var(--text-2);
+  padding: 1px 8px; border: 1px solid var(--line); border-radius: 20px;
+}
+.td-statusline .sl-ctx.hot { color: var(--red); border-color: var(--red); background: var(--red-soft); }
+.td-statusline .sl-comp {
+  display: inline-flex; align-items: center;
+  font-size: 11.3px; color: var(--text-3);
+  padding: 1px 8px; border: 1px dashed var(--line-strong); border-radius: 20px;
+}
 /* --- composer（永远最底部） --- */
 .td-composer {
   padding: 7px 12px 12px;
@@ -1431,6 +1465,8 @@ input[type='number'].num-inp { min-width: 110px; }
 .ev-think .ev-think-label { font-weight: 500; }
 .ev-think .ev-think-body { margin: 8px 0 2px 30px; }
 /* 实时思维/文本流（task.stream 增量块，随 token 增长） */
+.live-ico { flex: none; color: var(--text-3); }
+.think-inline-ico { vertical-align: -2px; margin-right: 6px; color: var(--text-3); flex: none; }
 .live-stream { margin-top: 10px; }
 .live-block { padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--text-3) 6%, var(--bg)); }
 .live-label { display: block; font-size: 11px; color: var(--text-3); margin-bottom: 5px; letter-spacing: 0.02em; }

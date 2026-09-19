@@ -161,6 +161,40 @@ export function installToTask(
   return { ok: true };
 }
 
+/** 把用户导入的技能/扩展文件写入任务 workspace 的 .pi/（任务级，仅该任务生效） */
+export function installFileToTask(
+  taskId: string,
+  taskWorkspace: string,
+  rawName: string,
+  content: string,
+  kind: 'skill' | 'extension'
+): { ok: boolean; error?: string } {
+  const base = (rawName.split(/[\\/]/).pop() ?? '').replace(/\.(md|ts|js)$/i, '').trim();
+  const name =
+    base.replace(/[^\w\u4e00-\u9fa5-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') ||
+    `${kind}-${Date.now().toString(36)}`;
+  try {
+    if (kind === 'skill') {
+      const dir = path.join(taskWorkspace, '.pi', 'skills', name);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'SKILL.md'), content, 'utf8');
+      db.prepare('INSERT INTO task_skills (task_id, name, kind, source, path, installed_at) VALUES (?,?,?,?,?,?)').run(
+        taskId, name, 'skill', 'imported', path.join(name, 'SKILL.md'), Date.now()
+      );
+    } else {
+      const p = path.join(taskWorkspace, '.pi', 'extensions', `${name}.ts`);
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, content, 'utf8');
+      db.prepare('INSERT INTO task_skills (task_id, name, kind, source, path, installed_at) VALUES (?,?,?,?,?,?)').run(
+        taskId, name, 'extension', 'imported', `${name}.ts`, Date.now()
+      );
+    }
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+  return { ok: true };
+}
+
 export function removeTaskSkill(id: number) {
   const row = db.prepare('SELECT * FROM task_skills WHERE id=?').get(id) as
     | { task_id: string; name: string; kind: string; path: string }

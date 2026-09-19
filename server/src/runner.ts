@@ -15,6 +15,9 @@ export type TaskRow = {
   plan_json: string | null; answers_json: string | null; review_json: string | null; checkpoint_json: string | null;
   current_action: string;
   context_window: number;
+  ctx_tokens?: number;
+  ctx_percent?: number;
+  compactions?: number;
 };
 
 export type PlanStep = { id: string; title: string; goal: string; actions: string[]; done: boolean };
@@ -437,6 +440,14 @@ export class TaskRunner {
     } else if (ev.type === 'tool_execution_end' && ev.isError) {
       const name = String((ev.result as { [k: string]: unknown })?.name ?? ev.toolName ?? 'tool');
       this.emit(t.id, 'system', { text: `工具 ${name} 执行出错（见上方工具输出）` });
+    } else if (ev.type === 'compaction_end') {
+      // 上下文压缩：计数 + 事件流提示（状态条显示「压缩 N 次」）
+      const n = ((db.prepare('SELECT compactions FROM tasks WHERE id=?').get(t.id) as { compactions: number })?.compactions ?? 0) + 1;
+      db.prepare('UPDATE tasks SET compactions=? WHERE id=?').run(n, t.id);
+      const r = ev.result as { tokensBefore?: number; estimatedTokensAfter?: number } | undefined;
+      const span = r?.tokensBefore ? `：${Math.round(r.tokensBefore / 1000)}k → ${Math.round((r.estimatedTokensAfter ?? 0) / 1000)}k` : '';
+      this.emit(t.id, 'system', { text: `上下文压缩完成（第 ${n} 次）${span}` });
+      this.refreshContextStats();
     }
   }
 
@@ -519,6 +530,22 @@ export class TaskRunner {
     return mtime > this.lastTestAt - 1; // done.json 必须是本轮执行写出的
   }
 
+  /** 回合静止后刷新上下文空间使用（pi get_session_stats → contextUsage）；失败忽略 */
+  private refreshContextStats() {
+    const s = this.sess;
+    if (!s) return;
+    s.send({ type: 'get_session_stats' }, 10_000)
+      .then((res) => {
+        if (!res.success) return;
+        const cu = (res.data as { contextUsage?: { tokens?: number; percent?: number } })?.contextUsage;
+        if (!cu) return;
+        const tokens = typeof cu.tokens === 'number' ? cu.tokens : 0;
+        const pct = typeof cu.percent === 'number' ? cu.percent : 0;
+        db.prepare('UPDATE tasks SET ctx_tokens=?, ctx_percent=? WHERE id=?').run(tokens, pct, this.t.id);
+      })
+      .catch(() => { /* 忽略 */ });
+  }
+
   private async promptWait(message: string, timeoutMs: number, action: string): Promise<void> {
     const s = this.sess!;
     this.emit(this.t.id, 'system', { text: `▸ ${action}` });
@@ -527,6 +554,7 @@ export class TaskRunner {
     await s.refreshSessionFile();
     this.saveCheckpoint(this.t.status, action);
     await s.waitSettled(timeoutMs);
+    this.refreshContextStats();
   }
 
   // ---------------- 生命周期 ----------------
@@ -667,6 +695,7 @@ export class TaskRunner {
     await s.refreshSessionFile();
     this.saveCheckpoint('executing', '执行中');
     await s.waitSettled(EXEC_TIMEOUT);
+    this.refreshContextStats();
     this.clearWatchers();
     if (this.released) return;
     if (this.handleBlock()) return;

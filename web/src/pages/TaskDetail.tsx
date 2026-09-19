@@ -29,6 +29,8 @@ import {
   Pause,
   Play,
   Brain,
+  Gauge,
+  Trash2,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { onEvent } from '../lib/ws';
@@ -267,6 +269,7 @@ function AstUnit({ parts, ts, imgBase }: { parts: any[]; ts: number; imgBase?: s
         if (s.t === 'think')
           return (
             <div key={i} className="tui-think" data-testid="think-block">
+              <Brain size={12} className="think-inline-ico" />
               <MD text={s.text} />
             </div>
           );
@@ -379,11 +382,8 @@ function EvRow({ ev, plan, imgBase, onPreview }: { ev: TaskEvent; plan: Plan | n
       return (
         <details className="ev ev-think" open>
           <summary>
-            {time}
             <Brain size={13} className="ev-ico" />
-            <span className="ev-think-label">
-              {t('ev.thinkLabel')} · {text.length > 999 ? `${(text.length / 1000).toFixed(1)}k` : text.length}
-            </span>
+            {time}
           </summary>
           <div className="tui-think ev-think-body">
             <MD text={text} />
@@ -467,6 +467,7 @@ export default function TaskDetail() {
   const [assets, setAssets] = useState<any[]>([]);
   // 实时流：pi 思维/文本增量（task.stream，不落库；message_end 后由持久化事件取代）
   const [live, setLive] = useState<{ key: string; kind: 'thinking' | 'text'; text: string }[]>([]);
+  const [confirmDel, setConfirmDel] = useState(false); // 删除任务两步确认
   const [feedFilter, setFeedFilter] = useState('all');
   const [mode, setMode] = useState<'summary' | 'full'>('summary');
   const [tab, setTab] = useState<'plan' | 'accept' | 'outputs'>('outputs');
@@ -509,6 +510,7 @@ export default function TaskDetail() {
     const off = onEvent((ev) => {
       const p = ev.payload ?? {};
       if (p.taskId && p.taskId !== id) return;
+      if (ev.kind === 'task.deleted') { goBack(); return; }
       if (ev.kind === 'task.event') {
         const e = ev.payload.event;
         if (e && e.seq > lastSeq.current) {
@@ -653,6 +655,8 @@ export default function TaskDetail() {
   const projName = (task.workspace_path || '').split(/[\\/]/).filter(Boolean).pop() || 'project';
   const doPause = () => api.pause(id).then(reloadTask).catch((e) => toast(e.message, 'err'));
   const doResume = () => api.resume(id).then(reloadTask).catch((e) => toast(e.message, 'err'));
+  // 返回「来的地方」：从哪个看板/项目进来就回哪；直接开 URL（无历史）回首页
+  const goBack = () => (window.history.length > 1 ? nav(-1) : nav('/boards'));
 
   async function submitBranch() {
     const answers: Record<string, string> = {};
@@ -682,7 +686,7 @@ export default function TaskDetail() {
       {/* ===== 顶部固定：任务 + 描述 ===== */}
       <header className="td-head">
         <div className="td-hrow">
-          <button className="btn ghost" onClick={() => nav(`/p/${encodeURIComponent(projName)}`)}>
+          <button className="btn ghost" onClick={goBack}>
             <ArrowLeft size={14} /> {t('board.back')}
           </button>
           <h1 className="td-title" title={task.title}>
@@ -742,6 +746,20 @@ export default function TaskDetail() {
               <X size={13} /> {t('task.cancel')}
             </button>
           )}
+          <button
+            className={`btn ${confirmDel ? 'danger' : 'ghost'} sm`}
+            data-testid="btn-delete"
+            onClick={() => {
+              if (!confirmDel) {
+                setConfirmDel(true);
+                setTimeout(() => setConfirmDel(false), 3000);
+                return;
+              }
+              api.del(id).then(() => { toast(t('task.deleted')); goBack(); }).catch((e) => toast(e.message, 'err'));
+            }}
+          >
+            <Trash2 size={13} /> {confirmDel ? t('task.deleteConfirm') : t('task.delete')}
+          </button>
           <span style={{ width: 8 }} />
           <TopControls />
         </div>
@@ -824,9 +842,7 @@ export default function TaskDetail() {
             <div className="live-stream" data-testid="live-stream">
               {live.map((b) => (
                 <div key={b.key} className={b.kind === 'thinking' ? 'tui-think live-block' : 'tui-text live-block'}>
-                  <span className="live-label">
-                    {b.kind === 'thinking' ? t('live.thinking') : t('live.text')}…
-                  </span>
+                  {b.kind === 'thinking' && <Brain size={12} className="live-ico" />}
                   <MD text={b.text} />
                 </div>
               ))}
@@ -910,6 +926,20 @@ export default function TaskDetail() {
         <span className="sl-phase">{t(`status.${task.status}`)}</span>
         {task.current_action && <span className="sl-action">{task.current_action}</span>}
         <span style={{ flex: 1 }} />
+        {task.ctx_tokens ? (
+          <span
+            className={`sl-ctx${(task.ctx_percent ?? 0) >= 90 ? ' hot' : ''}`}
+            title={`${t('ctx.used')} ${(task.ctx_tokens ?? 0).toLocaleString()} tok`}
+          >
+            <Gauge size={12} />
+            {Math.min(999, Math.round(task.ctx_percent ?? 0))}%
+          </span>
+        ) : null}
+        {(task.compactions ?? 0) > 0 && (
+          <span className="sl-comp" title={t('ctx.compactedTitle')}>
+            {t('ctx.compacted').replace('{n}', String(task.compactions))}
+          </span>
+        )}
         {task.started_at && (
           <span className="sl-dur">
             {running ? `${t('meta.running')} ${fmtDur(Date.now() - task.started_at)}` : `${t('meta.duration')} ${fmtDur((task.finished_at ?? Date.now()) - task.started_at)}`}

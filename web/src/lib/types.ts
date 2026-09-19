@@ -22,6 +22,7 @@ export interface Task {
   workspace_path: string; branch_mode: 'manual' | 'auto'; branch_timeout_min: number;
   acceptance_text: string; test_cmd: string; extra_prompt: string; retry_count: number;
   current_action: string; context_window?: number;
+  ctx_tokens?: number; ctx_percent?: number; compactions?: number;
   board_name?: string; subagent?: { label: string; at: number; id: string | null } | null;
   plan: Plan | null; answers: Record<string, string>; review: Review | null;
 }

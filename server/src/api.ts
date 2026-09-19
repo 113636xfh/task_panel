@@ -4,7 +4,7 @@ import path from 'node:path';
 import { db, getSettings, setSettings, uid, DEFAULT_SETTINGS, ROOT } from './db.js';
 import { PROMPT_DEFAULTS } from './prompts.js';
 import { publish } from './bus.js';
-import { inventory, installToTask, removeTaskSkill } from './skills.js';
+import { inventory, installToTask, installFileToTask, removeTaskSkill } from './skills.js';
 import {
   emitEvent, runtimeStats, answerTask, answerBlock, confirmTask, cancelTask, messageTask, pauseTask, resumeTask,
 } from './scheduler.js';
@@ -189,6 +189,27 @@ api.get('/tasks/:id', (req, res) => {
   res.json(t);
 });
 
+// 删除任务（连带事件/产物/阻塞/留言/技能；工作目录保留）
+api.delete('/tasks/:id', (req, res) => {
+  const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(req.params.id) as TaskRow | undefined;
+  if (!t) return res.status(404).json({ error: 'not found' });
+  cancelTask(t.id); // 运行中则先停 runner（防止孤儿 pi）；终态则无副作用
+  for (const q of [
+    'DELETE FROM task_events WHERE task_id=?',
+    'DELETE FROM task_assets WHERE task_id=?',
+    'DELETE FROM task_blocks WHERE task_id=?',
+    'DELETE FROM task_user_msgs WHERE task_id=?',
+    'DELETE FROM branch_answers WHERE task_id=?',
+    'DELETE FROM checkpoints WHERE task_id=?',
+    'DELETE FROM task_skills WHERE task_id=?',
+  ]) db.prepare(q).run(t.id);
+  db.prepare('DELETE FROM tasks WHERE id=?').run(t.id);
+  publish('task.deleted', { taskId: t.id, boardId: t.board_id });
+  publish('task.status', { taskId: t.id, to: 'cancelled', from: t.status });
+  publish('runtime.slots', runtimeStats());
+  res.json({ ok: true });
+});
+
 api.get('/tasks/:id/events', (req, res) => {
   const since = Number(req.query.since ?? 0);
   const rows = db.prepare('SELECT seq, ts, kind, payload FROM task_events WHERE task_id=? AND seq>? ORDER BY seq').all(req.params.id, since) as any[];
@@ -247,6 +268,12 @@ function createTaskInBoard(boardId: string, body: any): { status: number; result
     String(body.acceptance ?? ''), String(body.test_cmd ?? ''), String(body.extra_prompt ?? ''), cw);
   for (const s of String(body.skills ?? '').split(',').map((x) => x.trim()).filter(Boolean)) {
     installToTask(id, dir, s, 'skill', 'global');
+  }
+  // 用户导入的技能/扩展文件（全局/项目层默认已继承，这里只处理额外附上的文件）
+  if (Array.isArray(body.skillFiles)) {
+    for (const sf of body.skillFiles as { name?: string; content?: string; kind?: string }[]) {
+      installFileToTask(id, dir, String(sf.name ?? ''), String(sf.content ?? ''), sf.kind === 'extension' ? 'extension' : 'skill');
+    }
   }
   // 长提示词附图：保存到工作区 work/images/，并把编号映射追加到描述
   if (Array.isArray(body.images) && body.images.length) {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, ImagePlus, FolderOpen, ChevronDown } from 'lucide-react';
+import { X, ImagePlus, FolderOpen, ChevronDown, FileUp } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from '../lib/toast';
 import { useI18n } from '../i18n';
@@ -12,18 +12,16 @@ function dataUrl(name: string, data: string): string {
   return `data:${IMG_MIME[ext] ?? 'image/png'};base64,${data}`;
 }
 
-export type SkillItem = { name: string; source: string; kind: string; description: string };
+type ImportFile = { name: string; content: string; kind: 'skill' | 'extension' };
 
 // 新建任务弹窗（P3 精简版）：标题+优先级 | 工作目录 | 任务提示词；其余收进「高级设置」
 // 项目 = 工作目录末段，后端自动关联/创建同名看板（前端不再暴露看板概念）
 export default function NewTaskModal({
   defaultWs,
-  skills,
   onClose,
   onCreated,
 }: {
   defaultWs?: string;
-  skills: SkillItem[];
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -40,10 +38,11 @@ export default function NewTaskModal({
   const [branchMin, setBranchMin] = useState(30);
   const [ctxWin, setCtxWin] = useState(0); // 0 = 跟随全局默认
   const [extra, setExtra] = useState('');
-  const [picked, setPicked] = useState<string[]>([]);
+  const [skillFiles, setSkillFiles] = useState<ImportFile[]>([]);
   const [busy, setBusy] = useState(false);
   const [imgFiles, setImgFiles] = useState<{ name: string; data: string; url: string }[]>([]);
   const imgInputRef = useRef<HTMLInputElement>(null);
+  const skillFileRef = useRef<HTMLInputElement>(null);
 
   // Esc 关闭
   useEffect(() => {
@@ -66,6 +65,25 @@ export default function NewTaskModal({
       toast(t('img.err'), 'err');
     } finally {
       if (imgInputRef.current) imgInputRef.current.value = '';
+    }
+  }
+
+  // 附加技能/扩展文件（.md=技能，.ts/.js=扩展）：读取内容随任务创建提交，后端写入任务 workspace 的 .pi/
+  async function pickSkillFiles(files: FileList | null) {
+    if (!files?.length) return;
+    try {
+      const items: ImportFile[] = [];
+      for (const f of Array.from(files)) {
+        const content = await f.text();
+        const base = f.name.replace(/\.(md|ts|js)$/i, '');
+        items.push({ name: base, content, kind: f.name.toLowerCase().endsWith('.md') ? 'skill' : 'extension' });
+      }
+      setSkillFiles((prev) => {
+        const seen = new Set(prev.map((x) => x.name + x.kind));
+        return [...prev, ...items.filter((x) => (seen.has(x.name + x.kind) ? false : (seen.add(x.name + x.kind), true)))];
+      });
+    } catch {
+      toast(t('modal.skills.err'), 'err');
     }
   }
 
@@ -95,7 +113,7 @@ export default function NewTaskModal({
         branch_mode: branch,
         branch_timeout_min: branchMin,
         extra_prompt: extra.trim(),
-        skills: picked.join(','),
+        skillFiles,
         images: imgFiles.map(({ name, data }) => ({ name, data })),
         context_window: ctxWin > 0 ? ctxWin : 0,
       });
@@ -228,24 +246,27 @@ export default function NewTaskModal({
                   </div>
                   <div className="field" style={{ flex: 1, minWidth: 0 }}>
                     <label>{t('modal.branch')}</label>
-                    <div className="row" style={{ alignItems: 'center', gap: 10 }}>
-                      <div className="seg">
-                        <button className={branch === 'manual' ? 'on' : ''} onClick={() => setBranch('manual')}>
-                          {t('modal.branch.manual')}
-                        </button>
-                        <button className={branch === 'auto' ? 'on' : ''} onClick={() => setBranch('auto')}>
-                          {t('modal.branch.auto')}
-                        </button>
-                      </div>
-                      {branch === 'manual' && (
-                        <span className="row" style={{ gap: 6, alignItems: 'center' }}>
-                          <input type="range" min={5} max={1440} step={5} value={branchMin} onChange={(e) => setBranchMin(Number(e.target.value))} />
-                          <span className="mono" style={{ color: 'var(--text-2)', fontSize: 12 }}>
-                            {branchMin}m
-                          </span>
-                        </span>
-                      )}
+                    <div className="seg seg-block" data-testid="branch-opt">
+                      <button type="button" className={branch === 'manual' ? 'on' : ''} onClick={() => setBranch('manual')}>
+                        {t('modal.branch.manual')}
+                      </button>
+                      <button type="button" className={branch === 'auto' ? 'on' : ''} onClick={() => setBranch('auto')}>
+                        {t('modal.branch.auto')}
+                      </button>
                     </div>
+                    {branch === 'manual' && (
+                      <div className="row" style={{ gap: 8, alignItems: 'center', marginTop: 8 }}>
+                        <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{t('modal.branch.timeout')}</span>
+                        <input
+                          className="inp mono"
+                          data-testid="input-branch-min"
+                          style={{ width: 76, padding: '4px 8px' }}
+                          type="number" min={5} max={1440} step={5} value={branchMin}
+                          onChange={(e) => setBranchMin(Math.max(5, Math.min(1440, Math.round(Number(e.target.value) || 5))))}
+                        />
+                        <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{t('modal.branch.timeout.unit')}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="field">
@@ -254,21 +275,31 @@ export default function NewTaskModal({
                 </div>
                 <div className="field">
                   <label>{t('modal.skills')}</label>
-                  <div className="skill-list">
-                    {skills.length === 0 && <span style={{ color: 'var(--text-3)', fontSize: 12 }}>{t('modal.skills.empty')}</span>}
-                    {skills.map((s) => (
-                      <label key={`${s.source}|${s.kind}|${s.name}`} className="skill-opt">
-                        <input
-                          type="checkbox"
-                          checked={picked.includes(s.name)}
-                          onChange={(e) => setPicked((p) => (e.target.checked ? [...p, s.name] : p.filter((x) => x !== s.name)))}
-                        />
-                        <b>{s.name}</b>
-                        <span className="kind-tag">{s.kind}</span>
-                        <span className="s-desc">{s.source === 'global' ? t('modal.skill.global') : t('modal.skill.project')}</span>
-                      </label>
-                    ))}
+                  <div className="hint" style={{ marginTop: 0, marginBottom: 6 }}>{t('modal.skills.hint')}</div>
+                  <div className="file-pick" onClick={() => skillFileRef.current?.click()}>
+                    <FileUp size={14} /> {t('modal.skills.pick')}
                   </div>
+                  <input
+                    ref={skillFileRef}
+                    type="file"
+                    multiple
+                    accept=".md,.ts,.js"
+                    style={{ display: 'none' }}
+                    onChange={(e) => { pickSkillFiles(e.target.files); e.target.value = ''; }}
+                  />
+                  {skillFiles.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                      {skillFiles.map((f) => (
+                        <span key={f.name + f.kind} className="file-chip">
+                          <b>{f.name}</b>
+                          <span className="kind-tag">{f.kind === 'skill' ? t('modal.skills.kind.skill') : t('modal.skills.kind.ext')}</span>
+                          <button className="chip-x" onClick={() => setSkillFiles((p) => p.filter((x) => !(x.name === f.name && x.kind === f.kind)))}>
+                            <X size={11} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
