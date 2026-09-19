@@ -177,8 +177,9 @@ export const en: Record<string, string> = {
   'meta.duration': 'Elapsed',
 
   'task.cancel': 'Cancel task',
+  'task.cancelMsg': 'The task will stop running immediately. The saved checkpoint can still be restarted later.',
   'task.delete': 'Delete task',
-  'task.deleteConfirm': 'Confirm delete?',
+  'task.deleteMsg': 'The task, its event stream, outputs, and block records will be permanently deleted (workspace is kept). This cannot be undone.',
   'task.deleted': 'Task deleted',
   'ctx.used': 'Context used',
   'ctx.compacted': 'Compacted {n}\u00d7',

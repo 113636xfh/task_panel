@@ -191,8 +191,9 @@ export const zh: Record<string, string> = {
   'meta.duration': '用时',
 
   'task.cancel': '取消任务',
+  'task.cancelMsg': '取消后任务立即停止运行，已保存的断点仍可随时重新开始。',
   'task.delete': '删除任务',
-  'task.deleteConfirm': '确认删除？',
+  'task.deleteMsg': '任务及其事件流、产物、阻塞记录将被永久删除（工作目录保留）。此操作不可撤销。',
   'task.deleted': '任务已删除',
   'ctx.used': '上下文使用',
   'ctx.compacted': '压缩 {n} 次',

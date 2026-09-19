@@ -37,6 +37,7 @@ import { onEvent } from '../lib/ws';
 import { fmtAgo, fmtDur, fmtTime } from '../lib/fmt';
 import { toast } from '../lib/toast';
 import AssetPreview from '../components/AssetPreview';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { MD } from '../lib/md';
 import { fileToBase64 } from '../lib/img';
 import { useI18n } from '../i18n';
@@ -467,7 +468,7 @@ export default function TaskDetail() {
   const [assets, setAssets] = useState<any[]>([]);
   // 实时流：pi 思维/文本增量（task.stream，不落库；message_end 后由持久化事件取代）
   const [live, setLive] = useState<{ key: string; kind: 'thinking' | 'text'; text: string }[]>([]);
-  const [confirmDel, setConfirmDel] = useState(false); // 删除任务两步确认
+  const [confirm, setConfirm] = useState<'cancel' | 'delete' | null>(null); // 确认弹窗：取消/删除任务
   const [feedFilter, setFeedFilter] = useState('all');
   const [mode, setMode] = useState<'summary' | 'full'>('summary');
   const [tab, setTab] = useState<'plan' | 'accept' | 'outputs'>('outputs');
@@ -749,26 +750,12 @@ export default function TaskDetail() {
             </button>
           )}
           {task.status !== 'done' && task.status !== 'cancelled' && (
-            <button
-              className="btn danger sm"
-              onClick={() => api.cancel(id).then(reloadTask).catch((e) => toast(e.message, 'err'))}
-            >
+            <button className="btn danger sm" onClick={() => setConfirm('cancel')}>
               <X size={13} /> {t('task.cancel')}
             </button>
           )}
-          <button
-            className={`btn ${confirmDel ? 'danger' : 'ghost'} sm`}
-            data-testid="btn-delete"
-            onClick={() => {
-              if (!confirmDel) {
-                setConfirmDel(true);
-                setTimeout(() => setConfirmDel(false), 3000);
-                return;
-              }
-              api.del(id).then(() => { toast(t('task.deleted')); goBack(); }).catch((e) => toast(e.message, 'err'));
-            }}
-          >
-            <Trash2 size={13} /> {confirmDel ? t('task.deleteConfirm') : t('task.delete')}
+          <button className="btn ghost sm" data-testid="btn-delete" onClick={() => setConfirm('delete')}>
+            <Trash2 size={13} /> {t('task.delete')}
           </button>
           <span style={{ width: 8 }} />
           <TopControls />
@@ -1261,6 +1248,27 @@ export default function TaskDetail() {
       )}
 
       {preview && <AssetPreview taskId={id} file={preview} onClose={() => setPreview(null)} />}
+
+      {confirm === 'cancel' && (
+        <ConfirmDialog
+          title={t('task.cancel')}
+          message={t('task.cancelMsg')}
+          confirmText={t('task.cancel')}
+          danger
+          onConfirm={() => api.cancel(id).then(reloadTask).catch((e) => toast(e.message, 'err'))}
+          onClose={() => setConfirm(null)}
+        />
+      )}
+      {confirm === 'delete' && (
+        <ConfirmDialog
+          title={t('task.delete')}
+          message={t('task.deleteMsg')}
+          confirmText={t('task.delete')}
+          danger
+          onConfirm={() => api.del(id).then(() => { toast(t('task.deleted')); goBack(); }).catch((e) => toast(e.message, 'err'))}
+          onClose={() => setConfirm(null)}
+        />
+      )}
     </div>
   );
 }
