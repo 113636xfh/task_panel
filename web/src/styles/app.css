@@ -1459,11 +1459,12 @@ input[type='number'].num-inp { min-width: 110px; }
 .tui-think .md p:first-child { margin-top: 0; }
 .tui-think .md p:last-child { margin-bottom: 0; }
 /* summary 模式：思维链折叠块（可展开） */
-.ev-think { border-radius: 8px; padding: 7px 10px; background: color-mix(in srgb, var(--text-3) 5%, var(--bg)); }
+/* 思维链折叠块：flex 纵向（icon+时间在左上角独占一行，正文从左端开始，与其他行对齐） */
+.ev-think { display: flex; flex-direction: column; border-radius: 8px; padding: 6px 10px 8px 2px; background: color-mix(in srgb, var(--text-3) 5%, var(--bg)); }
 .ev-think summary { display: flex; align-items: center; gap: 7px; cursor: pointer; color: var(--text-3); font-size: 12px; list-style: none; }
 .ev-think summary::-webkit-details-marker { display: none; }
 .ev-think .ev-think-label { font-weight: 500; }
-.ev-think .ev-think-body { margin: 8px 0 2px 30px; }
+.ev-think .ev-think-body { margin: 0; }
 /* 实时思维/文本流（task.stream 增量块，随 token 增长） */
 .live-ico { flex: none; color: var(--text-3); }
 .think-inline-ico { vertical-align: -2px; margin-right: 6px; color: var(--text-3); flex: none; }
