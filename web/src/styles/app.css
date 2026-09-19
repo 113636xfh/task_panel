@@ -411,9 +411,9 @@ select.inp { appearance: auto; }
 .ri-pass.y { color: var(--st-done); } .ri-pass.n { color: var(--st-failed); }
 .review-item .ri-ev { color: var(--text-3); font-size: 11.5px; }
 
-/* 留言板（事件流） */
+/* 留言板（事件流）：填满 .td-feed 剩余高度（不设 max-height，空动作区已让位） */
 .feed {
-  max-height: 460px; overflow-y: auto;
+  flex: 1; min-height: 0; overflow-y: auto;
   padding: 12px 14px;
   display: flex; flex-direction: column; gap: 7px;
 }
