@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 // 用 Node 24 内置 node:sqlite（零原生依赖，Ubuntu/Windows 行为一致）
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(here, '..', '..');
-const dataDir = process.env.TP_DATA_DIR ?? path.join(ROOT, 'data');
+export const DATA_DIR = process.env.TP_DATA_DIR ?? path.join(ROOT, 'data');
+const dataDir = DATA_DIR;
 mkdirSync(dataDir, { recursive: true });
 
 export const db = new DatabaseSync(path.join(dataDir, 'taskpanel.db'));

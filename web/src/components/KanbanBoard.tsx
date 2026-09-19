@@ -30,7 +30,16 @@ const TONE: Record<string, string> = {
   awaiting_confirm: 'orange',
   paused: 'orange',
   done: 'green',
+  failed: 'red',
+  cancelled: 'gray',
 };
+
+// 终态（失败/取消）落在「等待」列：可见可重跑（项目面板包含项目下全部任务）
+function colIndex(x: Task): number {
+  if (x.status === 'failed' || x.status === 'cancelled') return 0;
+  const i = COLS.findIndex((c) => c.statuses.includes(x.status));
+  return i >= 0 ? i : 0;
+}
 
 // 一行「正在进行」的内容：执行/打磨阶段优先 plan 进度，其余用 current_action
 function progressLine(t: Task): string {
@@ -69,6 +78,16 @@ function KCard({ t, onNav, showProj }: { t: Task; onNav: () => void; showProj?: 
         {SPIN.has(t.status) && <Loader2 size={12} className="spin kc-spin" />}
         {prog && <span className="kc-prog">{prog}</span>}
         <span className="kc-actions" onClick={(e) => e.stopPropagation()}>
+          {(t.status === 'failed' || t.status === 'cancelled') && (
+            <button
+              className="btn primary mini"
+              data-testid="btn-retry"
+              title={tx('tbl.retry')}
+              onClick={() => api.start(t.id).catch((e) => toast(e.message, 'err'))}
+            >
+              <Play size={11} /> {tx('tbl.retry')}
+            </button>
+          )}
           {(t.status === 'ready' || t.status === 'queued') && (
             <button
               className="btn primary mini"
@@ -134,8 +153,7 @@ export default function KanbanBoard({
 
   const rows = useMemo(() => {
     const visible = tasks.filter((x) => {
-      if (x.status === 'failed' || x.status === 'cancelled') return false; // 终态失败/取消 → 历史页
-      if (x.status === 'done' && !showDone) return false; // 首页隐藏已完成
+      if (x.status === 'done' && !showDone) return false; // 首页隐藏已完成（失败/取消始终可见）
       return true;
     });
     const active = visible
@@ -154,8 +172,8 @@ export default function KanbanBoard({
     <div className="kb2" data-testid={dataTestid}>
       <div className="kb2-head">
         <span className="kb2-gutter" />
-        {COLS.map((col) => {
-          const n = rows.filter((x) => col.statuses.includes(x.status)).length;
+        {COLS.map((col, i) => {
+          const n = rows.filter((x) => colIndex(x) === i).length;
           return (
             <div className="kb2-colh" key={col.key}>
               <span className="kb-dot" data-col={col.key} />
@@ -166,7 +184,7 @@ export default function KanbanBoard({
         })}
       </div>
       {rows.map((x) => {
-        const ci = COLS.findIndex((c) => c.statuses.includes(x.status));
+        const ci = colIndex(x);
         return (
           <div className="kb2-row" key={x.id}>
             <span className={`kb2-pri p${x.priority}`}>P{x.priority}</span>

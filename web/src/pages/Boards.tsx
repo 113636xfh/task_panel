@@ -46,7 +46,7 @@ export default function Boards() {
       <div className="page-head">
         <h1>{t('boards.title')}</h1>
         <span className="sub">
-          {tasks ? `${tasks.filter((x) => x.status !== 'failed' && x.status !== 'cancelled').length} ${t('boards.card.tasks')}` : '…'}
+          {tasks ? `${tasks.filter((x) => x.status !== 'done').length} ${t('boards.card.tasks')}` : '…'}
         </span>
         <span style={{ flex: 1 }} />
         <button className="btn primary" data-testid="btn-new-task" onClick={() => setShowNew(true)}>

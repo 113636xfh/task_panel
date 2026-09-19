@@ -1,0 +1,22 @@
+import puppeteer from 'puppeteer-core';
+const b = await puppeteer.launch({ headless: 'new', executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' });
+const p = await b.newPage();
+await p.setViewport({ width: 1440, height: 900 });
+await p.goto('http://127.0.0.1:8787/p/test', { waitUntil: 'networkidle2' });
+await p.waitForSelector('[data-testid="kanban-board"]', { timeout: 15000 });
+await new Promise(r => setTimeout(r, 1500));
+const failedRow = await p.evaluate(() => {
+  const card = [...document.querySelectorAll('[data-status="failed"]')][0];
+  if (!card) return null;
+  const r = card.getBoundingClientRect();
+  const retry = card.querySelector('[data-testid="btn-retry"]');
+  return { visible: r.width > 0, text: card.textContent?.slice(0, 80), retry: !!retry, retryText: retry?.textContent };
+});
+await p.screenshot({ path: 'C:/tmp/shot-proj-failed.png' });
+await p.goto('http://127.0.0.1:8787/', { waitUntil: 'networkidle2' });
+await p.waitForSelector('[data-testid="kanban-home"]', { timeout: 15000 });
+await new Promise(r => setTimeout(r, 1500));
+const homeFailed = await p.evaluate(() => !!document.querySelector('[data-status="failed"]'));
+await p.screenshot({ path: 'C:/tmp/shot-home-failed.png' });
+console.log(JSON.stringify({ failedRow, homeFailed }, null, 1));
+await b.close();

@@ -83,6 +83,7 @@ export const zh: Record<string, string> = {
     'phase.exec': '执行',
     'phase.test': '验收',
     'tbl.start': '启动',
+    'tbl.retry': '重试',
     'tbl.confirm': '确认完成',
     'tbl.empty': '还没有任务',
     'sb.boards': '看板',

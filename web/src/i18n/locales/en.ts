@@ -63,6 +63,10 @@ export const en: Record<string, string> = {
   'tabs.accept.empty': 'No acceptance criteria yet',
   'task.descToggle': 'Click to expand/collapse description',
   'tbl.readyHint': 'Ready — press Start on the board to begin',
+  'tbl.start': 'Start',
+  'tbl.retry': 'Retry',
+  'tbl.confirm': 'Confirm',
+  'tbl.empty': 'No tasks yet',
 
   'status.queued': 'Queued',
   'status.planning': 'Planning',

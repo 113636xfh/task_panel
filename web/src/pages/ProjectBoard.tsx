@@ -57,7 +57,6 @@ export default function ProjectBoard() {
     return off;
   }, [proj]);
 
-  const live = tasks.filter((x) => x.status !== 'failed' && x.status !== 'cancelled');
   // 新建任务：预填该项目已有的工作目录（共用模式）
   const defaultWs = all?.find((x) => baseName(x.workspace_path) === proj)?.workspace_path;
 
@@ -69,7 +68,7 @@ export default function ProjectBoard() {
         </button>
         <h1>{proj}</h1>
         <span className="sub">
-          {live.length} {t('boards.card.tasks')}
+          {tasks.length} {t('boards.card.tasks')}
         </span>
         <span style={{ flex: 1 }} />
         <button className="btn primary" data-testid="btn-new-task" onClick={() => setShowNew(true)}>

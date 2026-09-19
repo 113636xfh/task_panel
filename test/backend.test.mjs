@@ -301,6 +301,22 @@ test('P3 ready：创建默认「待准备」；手动开始入队；仅 ready �
   await waitForStatus(S.base, t.id, 'done');
 });
 
+test('P3 failed：失败任务可重试（failed → start → 断点重跑）', async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const d = new DatabaseSync(path.join(S.dataDir, 'taskpanel.db'));
+  const t = await a.post(`/boards/${boardId.v}/tasks`, makeTaskPayload({ title: 'failed 重试测试', wsName: `fr-${Date.now().toString(36)}` }));
+  await a.post(`/tasks/${t.id}/start`);
+  await waitForStatus(S.base, t.id, 'awaiting_confirm');
+  // 模拟失败终态（真实场景：重试次数用尽 / 执行器报错）
+  d.prepare("UPDATE tasks SET status='failed', finished_at=? WHERE id=?").run(Date.now(), t.id);
+  d.close();
+  const r = await a.post(`/tasks/${t.id}/start`);
+  assert.equal(r.ok, true, 'failed 任务应可重试');
+  const row = await a.get(`/tasks/${t.id}`);
+  assert.equal(row.status, 'queued');
+  await waitForStatus(S.base, t.id, 'awaiting_confirm', 30_000);
+});
+
 test('P3 rework：done → 留言打回 → 重新打磨（同会话）→ awaiting_confirm；不限次数', async () => {
   const t = await createAndStart(a, boardId.v, makeTaskPayload({ title: 'rework 返工测试', wsName: `rw-${Date.now().toString(36)}` }));
   await waitForStatus(S.base, t.id, 'awaiting_confirm');

@@ -294,10 +294,12 @@ api.post('/tasks', (req, res) => {
 api.post('/tasks/:id/start', (req, res) => {
   const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(req.params.id) as TaskRow | undefined;
   if (!t) return res.status(404).json({ error: 'not found' });
-  if (t.status !== 'ready') return res.status(400).json({ error: `只有「待准备」状态可开始（当前：${t.status}）` });
+  // 待准备 → 手动开始；失败 → 断点重跑（有 checkpoint 续跑，没有则重新规划）
+  if (!['ready', 'failed'].includes(t.status)) return res.status(400).json({ error: `只有「待准备/失败」状态可开始（当前：${t.status}）` });
+  const from = t.status;
   db.prepare("UPDATE tasks SET status='queued' WHERE id=?").run(t.id);
-  emitEvent(t.id, 'system', { text: '已手动开始：进入打磨队列' });
-  publish('task.status', { taskId: t.id, to: 'queued', from: 'ready' });
+  emitEvent(t.id, 'system', { text: from === 'failed' ? '已重试：从断点重跑（已完成步骤不重放）' : '已手动开始：进入打磨队列' });
+  publish('task.status', { taskId: t.id, to: 'queued', from });
   res.json({ ok: true });
 });
 

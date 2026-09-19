@@ -1,0 +1,10 @@
+import puppeteer from 'puppeteer-core';
+const b = await puppeteer.launch({ headless: 'new', executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' });
+const p = await b.newPage();
+await p.setViewport({ width: 1440, height: 900 });
+await p.goto('http://127.0.0.1:8787/p/demo-page-3/tasks/t-mu3y36e4-qxmimm', { waitUntil: 'networkidle0' });
+await p.waitForSelector('[data-testid="feed"]');
+await new Promise(r => setTimeout(r, 1500));
+await p.screenshot({ path: '/tmp/shot-feed-fixed.png' });
+await b.close();
+console.log('ok');

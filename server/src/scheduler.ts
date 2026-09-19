@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { db, getSettings, DEFAULT_SETTINGS } from './db.js';
+import { spawn, execFileSync } from 'node:child_process';
+import { db, DATA_DIR, getSettings, DEFAULT_SETTINGS } from './db.js';
 import { publish } from './bus.js';
 import { TaskRunner, type TaskRow, type Plan } from './runner.js';
 import { StubRunner } from './runner-stub.js';
@@ -101,6 +102,10 @@ function onRelease(taskId: string) {
 }
 
 function startTask(t: TaskRow) {
+  // TOCTOU 防护：查询快照到启动之间状态可能已被其他流程（抢占/暂停/另一实例）改掉
+  const cur = db.prepare('SELECT status FROM tasks WHERE id=?').get(t.id) as { status: string } | undefined;
+  if (!cur || !['queued', 'interrupted'].includes(cur.status)) return;
+  if (runners.has(t.id)) return;
   const settings = getSettings();
   const resume = !!t.plan_json;
   emitEvent(t.id, 'system', { text: resume ? '恢复执行（断点续跑）' : '任务进入打磨阶段（规划智能体已启动，短上下文）' });
@@ -217,6 +222,78 @@ export function shutdownRunners() {
   for (const r of runners.values()) {
     try { r.stop(); } catch { /* ignore */ }
   }
+}
+
+// ---------------- 单实例守护 + 孤儿进程清理（同数据目录只允许一个服务实例） ----------------
+
+/**
+ * 单实例守护：同一 DATA_DIR 只允许一个服务进程。
+ * 旧实例若还活着（例如测试遗留、端口被占但调度器仍在跑）→ 拒绝启动，
+ * 避免两个调度器 tick 同一 DB 造成「双 runner 同任务 / 状态互踩 / 孤儿 pi 烧 token」。
+ */
+export function claimSingleton(): boolean {
+  const pidFile = path.join(DATA_DIR, '.server.pid');
+  try {
+    const prev = Number(fs.readFileSync(pidFile, 'utf8').trim());
+    if (Number.isFinite(prev) && prev > 0 && prev !== process.pid) {
+      try {
+        process.kill(prev, 0); // 不发送信号，仅探测存活
+        console.error(`[task-panel] 数据目录 ${DATA_DIR} 已有服务实例在运行（PID ${prev}），本实例退出。`);
+        return false;
+      } catch (e: unknown) {
+        if ((e as NodeJS.ErrnoException)?.code === 'EPERM') return false; // 无权限探测 → 当作存活
+        // ESRCH 等 → 旧进程已死，接管
+      }
+    }
+  } catch { /* 无 pid 文件 → 接管 */ }
+  try { fs.writeFileSync(pidFile, String(process.pid), 'utf8'); } catch { /* 忽略 */ }
+  return true;
+}
+
+export function releaseSingleton() {
+  try {
+    const pidFile = path.join(DATA_DIR, '.server.pid');
+    if (fs.readFileSync(pidFile, 'utf8').trim() === String(process.pid)) fs.unlinkSync(pidFile);
+  } catch { /* 忽略 */ }
+}
+
+/**
+ * 启动时清理孤儿 runner 进程：旧实例被硬杀（taskkill /F、断电）后遗留的
+ * `pi --name taskpanel-*` 子进程仍在跑（继续向模型服务发请求）。杀掉它们的整棵进程树。
+ */
+export function killOrphanRunners() {
+  const pids: number[] = [];
+  try {
+    if (process.platform === 'win32') {
+      const out = execFileSync(
+        'powershell',
+        ['-NoProfile', '-Command',
+          'Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like \'*--name taskpanel-*\' } | ForEach-Object { $_.ProcessId }'],
+        { windowsHide: true, timeout: 20_000, encoding: 'utf8' }
+      );
+      for (const s of out.split(/\r?\n/)) {
+        const n = Number(s.trim());
+        if (Number.isFinite(n) && n > 0 && n !== process.pid) pids.push(n);
+      }
+    } else {
+      const out = execFileSync('ps', ['ww', '-o', 'pid=,command='], { timeout: 20_000, encoding: 'utf8' });
+      for (const line of out.split('\n')) {
+        if (!line.includes('taskpanel-')) continue;
+        const n = Number(line.trim().split(/\s+/)[0]);
+        if (Number.isFinite(n) && n > 0 && n !== process.pid) pids.push(n);
+      }
+    }
+  } catch (e) {
+    console.warn('[task-panel] 孤儿进程扫描失败：', String(e));
+    return;
+  }
+  for (const pid of pids) {
+    try {
+      if (process.platform === 'win32') spawn('taskkill', ['/pid', String(pid), '/t', '/f'], { windowsHide: true });
+      else process.kill(pid, 'SIGKILL');
+    } catch { /* 忽略 */ }
+  }
+  if (pids.length) console.log(`[task-panel] 已清理孤儿 runner 进程: ${pids.join(', ')}`);
 }
 
 // ---------------- 服务重启恢复：孤儿任务转 interrupted ----------------
