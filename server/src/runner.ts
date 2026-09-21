@@ -15,6 +15,7 @@ export type TaskRow = {
   plan_json: string | null; answers_json: string | null; review_json: string | null; checkpoint_json: string | null;
   current_action: string;
   context_window: number;
+  sort_order?: number;
   ctx_tokens?: number;
   ctx_percent?: number;
   compactions?: number;

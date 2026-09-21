@@ -35,6 +35,8 @@ import {
 import { api } from '../lib/api';
 import { onEvent } from '../lib/ws';
 import { fmtAgo, fmtDur, fmtTime } from '../lib/fmt';
+
+const baseName = (p: string) => (p || '').split(/[\\/]/).filter(Boolean).pop() || '';
 import { toast } from '../lib/toast';
 import AssetPreview from '../components/AssetPreview';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -525,6 +527,17 @@ export default function TaskDetail() {
   };
 
   const reloadTask = () => api.task(id).then(setTask).catch(() => {});
+  // 同项目任务列表（依赖管理：可选的父任务 + 跳转到父任务）
+  const [boardTasks, setBoardTasks] = useState<Task[]>([]);
+  const boardId = task?.board_id ?? '';
+  useEffect(() => {
+    if (!boardId) return;
+    api.tasks(boardId).then(setBoardTasks).catch(() => {});
+  }, [boardId]);
+  const addableDeps = useMemo(
+    () => (boardTasks ?? []).filter((x) => x.id !== task?.id && !(task?.deps ?? []).some((d) => d.parent_id === x.id)),
+    [boardTasks, task]
+  );
   const loadEvents = (since = 0) =>
     api
       .events(id, since)
@@ -1087,6 +1100,52 @@ export default function TaskDetail() {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+        {/* 依赖关系：父任务先完成本任务才开始（创建后可增删） */}
+        {task && (
+          <div className="td-deps">
+            <div className="td-deps-h">{t('task.dep.title')}</div>
+            {(task.deps ?? []).length === 0 && <div className="td-deps-empty">{t('task.dep.empty')}</div>}
+            {(task.deps ?? []).map((d) => {
+              const p = boardTasks.find((x) => x.id === d.parent_id);
+              return (
+                <div className="td-dep-row" key={d.parent_id}>
+                  <span
+                    className="td-dep-title"
+                    title={t('task.dep.open')}
+                    onClick={() => p && nav(`/p/${encodeURIComponent(baseName(p.workspace_path))}/tasks/${d.parent_id}`)}
+                  >
+                    {d.parent_title}
+                  </span>
+                  <span className={`pill s-${d.parent_status}`}>{t(`status.${d.parent_status}`)}</span>
+                  <button
+                    className="td-dep-x"
+                    title={t('task.dep.remove')}
+                    onClick={() => api.removeDep(task.id, d.parent_id).then(reloadTask).catch((e) => toast(e.message, 'err'))}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              );
+            })}
+            {addableDeps.length > 0 && (
+              <select
+                className="td-dep-add"
+                value=""
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v) return;
+                  api.addDep(task.id, v).then(() => { toast(t('task.dep.added')); reloadTask(); }).catch((e) => toast(e.message, 'err'));
+                }}
+              >
+                {addableDeps.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {t('task.dep.add')} · {x.title}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         )}
         <div className="tabs">

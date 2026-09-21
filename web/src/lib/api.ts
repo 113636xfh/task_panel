@@ -25,6 +25,12 @@ export const api = {
   blockAnswer: (id: string, answer: string) => req(`/api/tasks/${id}/block-answer`, { method: 'POST', body: JSON.stringify({ answer }) }),
   confirm: (id: string) => req(`/api/tasks/${id}/confirm`, { method: 'POST' }),
   start: (id: string) => req(`/api/tasks/${id}/start`, { method: 'POST' }),
+  // 依赖关系：child 依赖 parent（parent 先完成）
+  addDep: (childId: string, parentId: string) => req(`/api/tasks/${childId}/deps`, { method: 'POST', body: JSON.stringify({ parent_id: parentId }) }),
+  removeDep: (childId: string, parentId: string) => req(`/api/tasks/${childId}/deps/${parentId}`, { method: 'DELETE' }),
+  // 拖动排序：移到 targetId 前/后（行序 = 优先级）
+  reorder: (id: string, targetId: string, pos: 'before' | 'after') => req(`/api/tasks/${id}/reorder`, { method: 'POST', body: JSON.stringify({ targetId, pos }) }),
+  tasksInPath: (p: string) => req<{ id: string; title: string; status: string }[]>(`/api/tasks-by-path?path=${encodeURIComponent(p)}`),
   rework: (id: string, body: { text: string; images?: number[] }) =>
     req(`/api/tasks/${id}/rework`, { method: 'POST', body: JSON.stringify(body) }),
   // 原生目录选择器（选已有项目目录；取消 → {cancelled:true}）

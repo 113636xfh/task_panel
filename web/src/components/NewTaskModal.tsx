@@ -39,10 +39,20 @@ export default function NewTaskModal({
   const [ctxWin, setCtxWin] = useState(0); // 0 = 跟随全局默认
   const [extra, setExtra] = useState('');
   const [skillFiles, setSkillFiles] = useState<ImportFile[]>([]);
+  const [depOpts, setDepOpts] = useState<{ id: string; title: string; status: string }[]>([]);
+  const [depSel, setDepSel] = useState('');
   const [busy, setBusy] = useState(false);
   const [imgFiles, setImgFiles] = useState<{ name: string; data: string; url: string }[]>([]);
   const imgInputRef = useRef<HTMLInputElement>(null);
   const skillFileRef = useRef<HTMLInputElement>(null);
+
+  // 依赖选项：共用模式且已选目录时，列出该项目现有任务（新建模式无任务可依赖）
+  useEffect(() => {
+    setDepSel('');
+    if (wsMode === 'shared' && wsPath.trim()) {
+      api.tasksInPath(wsPath.trim()).then(setDepOpts).catch(() => setDepOpts([]));
+    } else setDepOpts([]);
+  }, [wsMode, wsPath]);
 
   // Esc 关闭
   useEffect(() => {
@@ -116,6 +126,7 @@ export default function NewTaskModal({
         skillFiles,
         images: imgFiles.map(({ name, data }) => ({ name, data })),
         context_window: ctxWin > 0 ? ctxWin : 0,
+        deps: depSel ? [depSel] : [],
       });
       toast(t('modal.created'));
       onCreated();
@@ -268,6 +279,22 @@ export default function NewTaskModal({
                       </div>
                     )}
                   </div>
+                </div>
+                <div className="field">
+                  <label>{t('modal.dep')}</label>
+                  {wsMode === 'shared' && depOpts.length > 0 ? (
+                    <select className="inp" style={{ width: '100%' }} value={depSel} onChange={(e) => setDepSel(e.target.value)}>
+                      <option value="">{t('modal.dep.none')}</option>
+                      {depOpts.map((o) => (
+                        <option key={o.id} value={o.id}>{o.title}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="hint" style={{ marginTop: 0 }}>
+                      {wsMode === 'fresh' ? t('modal.dep.freshHint') : t('modal.dep.empty')}
+                    </div>
+                  )}
+                  <div className="steer-hint">{t('modal.dep.hint')}</div>
                 </div>
                 <div className="field">
                   <label>{t('modal.extra')}</label>

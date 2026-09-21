@@ -76,7 +76,16 @@ function taskFromRow(t: TaskRow) {
     review: t.review_json ? JSON.parse(t.review_json) : null,
     // P3：本轮执行中派生的 sub agent（供看板小行展示；无则 null）
     subagent: latestSubagent(t.id, t.started_at ?? 0) ?? null,
+    // 依赖：父任务列表（看板画有向箭头 + 等待提示用）
+    deps: depsOf(t.id),
   };
+}
+
+// 任务的父任务（依赖关系）：parent_id/parent_title/parent_status
+function depsOf(taskId: string) {
+  return db
+    .prepare('SELECT td.parent_id, p.title AS parent_title, p.status AS parent_status FROM task_deps td JOIN tasks p ON p.id=td.parent_id WHERE td.child_id=?')
+    .all(taskId) as { parent_id: string; parent_title: string; parent_status: string }[];
 }
 
 // 当前运行轮次（started_at 之后）最近一次 subagent 事件 → {label, at, id}
@@ -179,7 +188,7 @@ api.get('/projects', (_req, res) => {
 });
 
 api.get('/boards/:id/tasks', (req, res) => {
-  const rows = db.prepare('SELECT * FROM tasks WHERE board_id=? ORDER BY created_at').all(req.params.id) as unknown as TaskRow[];
+  const rows = db.prepare('SELECT * FROM tasks WHERE board_id=? ORDER BY sort_order ASC').all(req.params.id) as unknown as TaskRow[];
   res.json(rows.map(taskFromRow));
 });
 
@@ -203,6 +212,7 @@ api.delete('/tasks/:id', (req, res) => {
     'DELETE FROM checkpoints WHERE task_id=?',
     'DELETE FROM task_skills WHERE task_id=?',
   ]) db.prepare(q).run(t.id);
+  db.prepare('DELETE FROM task_deps WHERE parent_id=? OR child_id=?').run(t.id, t.id);
   db.prepare('DELETE FROM tasks WHERE id=?').run(t.id);
   publish('task.deleted', { taskId: t.id, boardId: t.board_id });
   publish('task.status', { taskId: t.id, to: 'cancelled', from: t.status });
@@ -295,6 +305,7 @@ function createTaskInBoard(boardId: string, body: any): { status: number; result
   }
 
   const num = ((db.prepare('SELECT COALESCE(MAX(num),0)+1 n FROM tasks WHERE board_id=?').get(b.id) as { n: number }).n);
+  const so = ((db.prepare('SELECT COALESCE(MAX(sort_order),0)+1 n FROM tasks WHERE board_id=?').get(b.id) as { n: number }).n);
   // 唯一化目录
   let dir = workspace, i = num;
   while (fs.existsSync(dir) && ws.mode === 'fresh') dir = path.join(settings.workspacesBase, `${path.basename(workspace)}-${i++}`);
@@ -306,12 +317,12 @@ function createTaskInBoard(boardId: string, body: any): { status: number; result
   const cw = Math.min(10_000_000, Math.max(0, Math.round(Number(body.context_window ?? 0)) || 0));
   db.prepare(
     `INSERT INTO tasks (id, board_id, num, title, description, priority, status, created_at, workspace_path,
-       branch_mode, branch_timeout_min, acceptance_text, test_cmd, extra_prompt, context_window)
-     VALUES (?,?,?,?,?,?,'ready',?,?,?,?,?,?,?,?)`
+       branch_mode, branch_timeout_min, acceptance_text, test_cmd, extra_prompt, context_window, sort_order)
+     VALUES (?,?,?,?,?,?,'ready',?,?,?,?,?,?,?,?,?)`
   ).run(id, b.id, num, title, description, prio, at, dir,
     body.branch_mode === 'auto' ? 'auto' : 'manual',
     Number(body.branch_timeout_min ?? settings.branchTimeoutMin),
-    String(body.acceptance ?? ''), String(body.test_cmd ?? ''), String(body.extra_prompt ?? ''), cw);
+    String(body.acceptance ?? ''), String(body.test_cmd ?? ''), String(body.extra_prompt ?? ''), cw, so);
   for (const s of String(body.skills ?? '').split(',').map((x) => x.trim()).filter(Boolean)) {
     installToTask(id, dir, s, 'skill', 'global');
   }
@@ -329,9 +340,107 @@ function createTaskInBoard(boardId: string, body: any): { status: number; result
     } catch { /* 图片失败不阻塞建任务 */ }
   }
   emitEvent(id, 'system', { text: `任务已创建（#${num}），待准备：不占槽位、不排队，点「开始」进入打磨队列` });
+  // 创建时指定依赖：这些任务全部完成后本任务才开始
+  if (Array.isArray(body.deps)) {
+    for (const pid of body.deps as string[]) {
+      const r = addDep(id, String(pid));
+      if (!r.ok) emitEvent(id, 'system', { text: `添加依赖失败：${r.error}` });
+    }
+  }
   publish('task.created', { taskId: id, boardId: b.id, num });
   return { status: 200, result: { id, num } };
 }
+
+// ---------------- 依赖与拖动排序 ----------------
+
+function addDep(childId: string, parentId: string): { ok: boolean; error?: string } {
+  const child = db.prepare('SELECT * FROM tasks WHERE id=?').get(childId) as TaskRow | undefined;
+  const parent = db.prepare('SELECT * FROM tasks WHERE id=?').get(parentId) as TaskRow | undefined;
+  if (!child || !parent) return { ok: false, error: '任务不存在' };
+  if (child.id === parent.id) return { ok: false, error: '不能依赖自己' };
+  if (child.board_id !== parent.board_id) return { ok: false, error: '依赖仅限同一项目内' };
+  if (db.prepare('SELECT id FROM task_deps WHERE parent_id=? AND child_id=?').get(parentId, childId)) return { ok: true };
+  // 环检测：parent 已在 child 的子孙链上（child → … → parent 已存在）→ 加 parent→child 即成环
+  const descendants = new Set<string>();
+  const stack = [childId];
+  while (stack.length) {
+    const cur = stack.pop()!;
+    for (const d of db.prepare('SELECT child_id FROM task_deps WHERE parent_id=?').all(cur) as { child_id: string }[]) {
+      if (!descendants.has(d.child_id)) { descendants.add(d.child_id); stack.push(d.child_id); }
+    }
+  }
+  if (descendants.has(parentId)) return { ok: false, error: '循环依赖' };
+  db.prepare('INSERT INTO task_deps (parent_id, child_id, created_at) VALUES (?,?,?)').run(parentId, childId, Date.now());
+  enforceDeps(child.board_id); // 父任务自动移到子任务至少上一行
+  emitEvent(childId, 'system', { text: `已添加依赖：「${parent.title}」完成后才开始` });
+  publish('boards.changed', {});
+  return { ok: true };
+}
+
+function removeDep(childId: string, parentId: string) {
+  db.prepare('DELETE FROM task_deps WHERE parent_id=? AND child_id=?').run(parentId, childId);
+  emitEvent(childId, 'system', { text: '已移除依赖' });
+  publish('boards.changed', {});
+}
+
+// 强制约束：每个依赖的父任务必须严格排在子任务上方（至少一行）→ 自动把父任务移到子任务正上方
+function enforceDeps(boardId: string) {
+  for (let i = 0; i < 50; i++) {
+    const bad = db
+      .prepare(
+        "SELECT td.parent_id, td.child_id FROM task_deps td JOIN tasks a ON a.id=td.parent_id JOIN tasks b ON b.id=td.child_id WHERE a.board_id=? AND a.sort_order > b.sort_order LIMIT 1"
+      )
+      .get(boardId) as { parent_id: string; child_id: string } | undefined;
+    if (!bad) return;
+    const ids = (db.prepare('SELECT id FROM tasks WHERE board_id=? ORDER BY sort_order ASC').all(boardId) as { id: string }[]).map((x) => x.id);
+    ids.splice(ids.indexOf(bad.parent_id), 1);
+    ids.splice(ids.indexOf(bad.child_id), 0, bad.parent_id); // 移到 child 正上方
+    ids.forEach((id2, j) => db.prepare('UPDATE tasks SET sort_order=? WHERE id=?').run(j + 1, id2));
+  }
+}
+
+api.post('/tasks/:id/deps', (req, res) => {
+  const r = addDep(req.params.id, String(req.body?.parent_id ?? ''));
+  if (!r.ok) return res.status(400).json({ error: r.error });
+  res.json({ ok: true });
+});
+
+api.delete('/tasks/:id/deps/:parentId', (req, res) => {
+  removeDep(req.params.id, req.params.parentId);
+  res.json({ ok: true });
+});
+
+// 拖动排序：把任务移到 targetId 前/后（整个项目重编号 + 自动修正依赖顺序）
+api.post('/tasks/:id/reorder', (req, res) => {
+  const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(req.params.id) as TaskRow | undefined;
+  if (!t) return res.status(404).json({ error: 'not found' });
+  const targetId = String(req.body?.targetId ?? '');
+  const pos = req.body?.pos === 'after' ? 'after' : 'before';
+  const tg = db.prepare('SELECT * FROM tasks WHERE id=?').get(targetId) as TaskRow | undefined;
+  if (!tg) return res.status(404).json({ error: 'not found' });
+  if (t.board_id !== tg.board_id) return res.status(400).json({ error: '不能跨项目拖动' });
+  if (t.id === tg.id) return res.json({ ok: true });
+  const ids = (db.prepare('SELECT id FROM tasks WHERE board_id=? ORDER BY sort_order ASC').all(t.board_id) as { id: string }[]).map((x) => x.id);
+  ids.splice(ids.indexOf(t.id), 1);
+  const ti = ids.indexOf(tg.id);
+  if (ti < 0) return res.json({ ok: true });
+  ids.splice(pos === 'after' ? ti + 1 : ti, 0, t.id);
+  ids.forEach((id2, i) => db.prepare('UPDATE tasks SET sort_order=? WHERE id=?').run(i + 1, id2));
+  enforceDeps(t.board_id);
+  publish('boards.changed', {});
+  res.json({ ok: true });
+});
+
+// 建任务弹窗的依赖选项：按项目路径查该项目任务（新建项目目录尚未建 → 无选项）
+api.get('/tasks-by-path', (req, res) => {
+  const p = String(req.query.path ?? '');
+  if (!p) return res.json([]);
+  const proj = p.split(/[\\/]/).filter(Boolean).pop() ?? '';
+  const b = db.prepare('SELECT id FROM boards WHERE name=?').get(proj) as { id: string } | undefined;
+  if (!b) return res.json([]);
+  const rows = db.prepare('SELECT id, title, status FROM tasks WHERE board_id=? ORDER BY sort_order ASC').all(b.id) as { id: string; title: string; status: string }[];
+  res.json(rows);
+});
 
 api.post('/boards/:id/tasks', (req, res) => {
   const { status, result } = createTaskInBoard(req.params.id, req.body ?? {});

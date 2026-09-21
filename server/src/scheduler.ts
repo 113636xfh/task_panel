@@ -109,6 +109,16 @@ function startTask(t: TaskRow) {
   const cur = db.prepare('SELECT status FROM tasks WHERE id=?').get(t.id) as { status: string } | undefined;
   if (!cur || !['queued', 'interrupted'].includes(cur.status)) return;
   if (runners.has(t.id)) return;
+  // 依赖门槛：父任务必须全部完成（done 或已验收通过待确认 awaiting_confirm），否则留在队列等待
+  const pending = db
+    .prepare(
+      "SELECT p.title FROM task_deps td JOIN tasks p ON p.id=td.parent_id WHERE td.child_id=? AND p.status NOT IN ('done','awaiting_confirm')"
+    )
+    .all(t.id) as { title: string }[];
+  if (pending.length) {
+    db.prepare('UPDATE tasks SET current_action=? WHERE id=?').run(`等待父任务：${pending.map((p) => p.title).join('、')}`, t.id);
+    return;
+  }
   const settings = getSettings();
   const resume = !!t.plan_json;
   emitEvent(t.id, 'system', { text: resume ? '恢复执行（断点续跑）' : '任务进入打磨阶段（规划智能体已启动，短上下文）' });
@@ -146,9 +156,9 @@ function tick() {
     // 无空位：看高优先级排队任务能否抢占低优先级运行任务（P2 抢占项）
     preemptForHighPriority();
   } else {
-    // queued 优先于 interrupted（新任务优先，被打断的随后补上）
+    // queued 优先于 interrupted（新任务优先，被打断的随后补上）；行序（sort_order，可拖动调整）即执行优先级
     const rows = db.prepare(
-      "SELECT * FROM tasks WHERE status IN ('queued','interrupted') ORDER BY (status='queued') DESC, priority ASC, created_at ASC"
+      "SELECT * FROM tasks WHERE status IN ('queued','interrupted') ORDER BY (status='queued') DESC, sort_order ASC, created_at ASC"
     ).all() as TaskRow[];
     for (const t of rows) {
       if (runners.size >= s.concurrency) break;
@@ -176,24 +186,22 @@ function tick() {
 let started = false;
 
 /**
- * 优先级抢占（P2）：槽位全满时，若排队最高优先级任务是 P0/P1，
- * 抢占占用槽位中优先级最低（≥P2）的运行任务 → 置 interrupted（带 checkpoint，
- * tick 会在有空位时自动恢复）。规则保守（只有 P0/P1 能抢、只抢 P2/P3），
- * 避免 P0↔P1 或同级之间的抖动。每 tick 最多抢一个。
+ * 优先级抢占（P2 起）：槽位全满时，排队顺序最靠前的任务若排在某个运行任务之前，
+ * 抢占顺序最靠后（sort_order 最大）的运行任务 → 置 interrupted（带 checkpoint，
+ * tick 会在有空位时自动恢复）。行序（拖动调整）即优先级。每 tick 最多抢一个。
  */
 function preemptForHighPriority() {
   const top = db
     .prepare(
-      "SELECT id, num, priority FROM tasks WHERE status IN ('queued','interrupted') ORDER BY (status='queued') DESC, priority ASC, created_at ASC LIMIT 1"
+      "SELECT id, num, sort_order FROM tasks WHERE status IN ('queued','interrupted') ORDER BY (status='queued') DESC, sort_order ASC, created_at ASC LIMIT 1"
     )
-    .get() as { id: string; num: number; priority: number } | undefined;
-  if (!top || top.priority > 1) return; // P2 及以下不能抢
+    .get() as { id: string; num: number; sort_order: number } | undefined;
+  if (!top) return;
   const victims = [...runners.keys()]
-    .map((id) => db.prepare('SELECT id, priority, status FROM tasks WHERE id=?').get(id) as { id: string; priority: number; status: string } | undefined)
-    .filter((v): v is { id: string; priority: number; status: string } => !!v && v.priority >= 2);
-  if (!victims.length) return;
-  const victim = victims.sort((a, b) => b.priority - a.priority)[0];
-  if (victim.priority <= top.priority) return; // 同级不抢
+    .map((id) => db.prepare('SELECT id, sort_order, status FROM tasks WHERE id=?').get(id) as { id: string; sort_order: number; status: string } | undefined)
+    .filter((v): v is { id: string; sort_order: number; status: string } => !!v);
+  const victim = victims.filter((v) => v.sort_order > top.sort_order).sort((a, b) => b.sort_order - a.sort_order)[0];
+  if (!victim) return; // 排队最前的任务没排在任何运行任务之前 → 不抢
 
   const r = runners.get(victim.id);
   if (r) {
@@ -203,10 +211,10 @@ function preemptForHighPriority() {
   }
   db.prepare("UPDATE tasks SET status='interrupted' WHERE id=?").run(victim.id);
   db.prepare('INSERT INTO checkpoints (task_id, at_status, summary, at) VALUES (?,?,?,?)').run(
-    victim.id, 'preempted', `被 P${top.priority} 任务 #${top.num} 抢占，待空位自动恢复`, Date.now()
+    victim.id, 'preempted', `被任务 #${top.num} 抢占（队列更靠前），待空位自动恢复`, Date.now()
   );
   emitEvent(victim.id, 'system', {
-    text: `被抢占：P${top.priority} 任务 #${top.num} 需要槽位。本任务标记为「被抢占」，有空位时将从断点自动恢复。`,
+    text: `被抢占：任务 #${top.num} 排在队列更前面。本任务标记为「被抢占」，有空位时将从断点自动恢复。`,
   });
   publish('task.status', { taskId: victim.id, to: 'interrupted', from: victim.status });
   // 立即再排一次，让高优任务马上补上（不等下一个 tick）

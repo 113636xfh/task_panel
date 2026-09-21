@@ -40,6 +40,17 @@ export const DEFAULT_SETTINGS = {
   if (!cols.includes('ctx_tokens')) db.exec('ALTER TABLE tasks ADD COLUMN ctx_tokens INTEGER NOT NULL DEFAULT 0');
   if (!cols.includes('ctx_percent')) db.exec('ALTER TABLE tasks ADD COLUMN ctx_percent REAL NOT NULL DEFAULT 0');
   if (!cols.includes('compactions')) db.exec('ALTER TABLE tasks ADD COLUMN compactions INTEGER NOT NULL DEFAULT 0');
+  // 手动排序（行序=优先级/执行顺序，拖动行调整）；任务依赖：父必须先完成
+  if (!cols.includes('sort_order')) db.exec('ALTER TABLE tasks ADD COLUMN sort_order REAL NOT NULL DEFAULT 0');
+  db.exec('CREATE TABLE IF NOT EXISTS task_deps (id INTEGER PRIMARY KEY AUTOINCREMENT, parent_id TEXT NOT NULL, child_id TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(parent_id, child_id))');
+  if (!cols.includes('sort_order')) {
+    // 回填：按项目内 created_at 顺序 1..n
+    const boards = (db.prepare('SELECT id FROM boards').all() as { id: string }[]);
+    for (const b of boards) {
+      const rows = db.prepare('SELECT id FROM tasks WHERE board_id=? ORDER BY created_at ASC').all(b.id) as { id: string }[];
+      rows.forEach((r, i) => db.prepare('UPDATE tasks SET sort_order=? WHERE id=?').run(i + 1, r.id));
+    }
+  }
 }
 
 export function getSettings() {

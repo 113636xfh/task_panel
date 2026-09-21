@@ -23,7 +23,9 @@ export interface Task {
   acceptance_text: string; test_cmd: string; extra_prompt: string; retry_count: number;
   current_action: string; context_window?: number;
   ctx_tokens?: number; ctx_percent?: number; compactions?: number;
+  sort_order?: number;
   board_name?: string; subagent?: { label: string; at: number; id: string | null } | null;
+  deps?: { parent_id: string; parent_title: string; parent_status: string }[];
   plan: Plan | null; answers: Record<string, string>; review: Review | null;
 }
 

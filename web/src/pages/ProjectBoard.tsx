@@ -43,7 +43,7 @@ export default function ProjectBoard() {
   useEffect(() => {
     loadTasks();
     const off = onEvent((ev) => {
-      if (['task.status', 'task.created', 'task.event'].includes(ev.kind)) loadTasks();
+      if (['task.status', 'task.created', 'boards.changed', 'task.event', 'task.deleted'].includes(ev.kind)) loadTasks();
     });
     return off;
   }, [proj]);

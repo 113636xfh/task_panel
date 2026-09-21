@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bot, Check, Loader2, Play } from 'lucide-react';
 import { api } from '../lib/api';
@@ -56,6 +56,7 @@ const SPIN = new Set(['planning', 'executing', 'testing']);
 function KCard({ t, onNav, showProj }: { t: Task; onNav: () => void; showProj?: boolean }) {
   const { t: tx } = useI18n();
   const prog = progressLine(t);
+  const waitDep = t.status === 'queued' && (t.deps ?? []).some((d) => !['done', 'awaiting_confirm'].includes(d.parent_status));
   return (
     <div
       className={`kcard tone-${TONE[t.status] ?? 'gray'}`}
@@ -76,6 +77,7 @@ function KCard({ t, onNav, showProj }: { t: Task; onNav: () => void; showProj?: 
           {tx(`status.${t.status}`)}
         </span>
         {SPIN.has(t.status) && <Loader2 size={12} className="spin kc-spin" />}
+        {waitDep && <span className="kc-dep" title={(t.deps ?? []).filter((d) => !['done', 'awaiting_confirm'].includes(d.parent_status)).map((d) => d.parent_title).join('、')}>{tx('board.waitDep')}</span>}
         {prog && <span className="kc-prog">{prog}</span>}
         <span className="kc-actions" onClick={(e) => e.stopPropagation()}>
           {(t.status === 'failed' || t.status === 'cancelled') && (
@@ -150,6 +152,10 @@ export default function KanbanBoard({
 }) {
   const { t } = useI18n();
   const nav = useNavigate();
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [over, setOver] = useState<{ id: string; pos: 'before' | 'after' } | null>(null);
+  const [paths, setPaths] = useState<string[]>([]);
 
   const rows = useMemo(() => {
     const visible = tasks.filter((x) => {
@@ -158,18 +164,38 @@ export default function KanbanBoard({
     });
     const active = visible
       .filter((x) => x.status !== 'done')
-      .sort((a, b) => a.priority - b.priority || a.created_at - b.created_at);
+      .sort((a, b) => (a.sort_order ?? a.created_at) - (b.sort_order ?? b.created_at)); // 行序 = 优先级（可拖动）
     const done = visible
       .filter((x) => x.status === 'done')
       .sort((a, b) => (a.finished_at ?? a.created_at) - (b.finished_at ?? b.created_at));
     return [...active, ...done]; // 已完成恒定在底部
   }, [tasks, showDone]);
 
+  // 依赖箭头：每条依赖画一条有向圆角线段（父行 → 子行，左侧 P 沟里）
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    if (!box) return;
+    const out: string[] = [];
+    for (const x of rows) {
+      for (const d of x.deps ?? []) {
+        const pr = box.querySelector<HTMLElement>(`[data-task-id="${d.parent_id}"]`);
+        const cr = box.querySelector<HTMLElement>(`[data-task-id="${x.id}"]`);
+        if (!pr || !cr) continue;
+        const y1 = pr.offsetTop + pr.offsetHeight / 2;
+        const y2 = cr.offsetTop + cr.offsetHeight / 2;
+        if (y2 <= y1) continue; // 父在上子在下（服务端强制）
+        const G = 26;
+        out.push(`M ${G} ${y1} C ${G - 16} ${y1} ${G - 16} ${y2} ${G} ${y2}`);
+      }
+    }
+    setPaths(out);
+  }, [rows]);
+
   const go = (x: Task) =>
     nav(`/p/${encodeURIComponent(baseName(x.workspace_path))}/tasks/${x.id}`);
 
   return (
-    <div className="kb2" data-testid={dataTestid}>
+    <div className="kb2" data-testid={dataTestid} ref={boxRef}>
       <div className="kb2-head">
         <span className="kb2-gutter" />
         {COLS.map((col, i) => {
@@ -183,10 +209,50 @@ export default function KanbanBoard({
           );
         })}
       </div>
+      {paths.length > 0 && (
+        <svg className="kb-deps" aria-hidden>
+          <defs>
+            <marker id="kb-arrow" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0,0 L8,4 L0,8 z" fill="var(--line-strong)" />
+            </marker>
+          </defs>
+          {paths.map((d, i) => (
+            <path key={i} d={d} markerEnd="url(#kb-arrow)" />
+          ))}
+        </svg>
+      )}
       {rows.map((x) => {
         const ci = colIndex(x);
         return (
-          <div className="kb2-row" key={x.id}>
+          <div
+            className={`kb2-row${over?.id === x.id ? (over.pos === 'before' ? ' drop-before' : ' drop-after') : ''}${dragId === x.id ? ' dragging' : ''}`}
+            key={x.id}
+            data-task-id={x.id}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData('text/plain', x.id);
+              e.dataTransfer.effectAllowed = 'move';
+              setDragId(x.id);
+            }}
+            onDragEnd={() => {
+              setDragId(null);
+              setOver(null);
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (!dragId || dragId === x.id) return;
+              const r = e.currentTarget.getBoundingClientRect();
+              setOver({ id: x.id, pos: e.clientY < r.top + r.height / 2 ? 'before' : 'after' });
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              const from = e.dataTransfer.getData('text/plain') || dragId;
+              const pos = over?.pos === 'after' ? 'after' : 'before';
+              setOver(null);
+              setDragId(null);
+              if (from && from !== x.id) api.reorder(from, x.id, pos).catch((er) => toast(er.message, 'err'));
+            }}
+          >
             <span className={`kb2-pri p${x.priority}`}>P{x.priority}</span>
             {COLS.map((col, i) => (
               <div className="kb2-cell" key={col.key}>

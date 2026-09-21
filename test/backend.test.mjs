@@ -255,28 +255,30 @@ test('优雅退出（SIGTERM 路径）：服务可再次启动', async () => {
 
 // ---------------- 优先级抢占（P2） ----------------
 
-test('抢占：排队 P0 抢占运行中 P2；P0 先完成，被抢占任务从断点自动恢复完成', async () => {
+test('抢占：排队中且行序更靠前的任务抢占行序更靠后的运行任务；完成后被抢任务断点恢复', async () => {
   await a.put('/settings', { concurrency: 1 });
-  // P2 慢任务占唯一槽位
-  const slow = await createAndStart(a, boardId.v, makeTaskPayload({ title: '#slow 慢任务-抢占 victim', priority: 2, wsName: `pv2-${Date.now().toString(36)}` }));
+  // 行序靠前（先建）的任务 + 行序靠后（后建）的慢任务
+  const p0 = await createTask(a, boardId.v, makeTaskPayload({ title: '抢占-行序靠前', priority: 0, wsName: `pv0-${Date.now().toString(36)}` }));
+  const slow = await createTask(a, boardId.v, makeTaskPayload({ title: '#slow 抢占-victim', priority: 2, wsName: `pv2-${Date.now().toString(36)}` }));
+  // 慢任务先启动占唯一槽位，行序靠前的任务入队 → 1~2s 内触发抢占
+  await a.post(`/tasks/${slow.id}/start`);
   await waitForStatus(S.base, slow.id, 'executing');
-  // P0 任务入队 → 应在 1~2s 内触发抢占
-  const p0 = await createAndStart(a, boardId.v, makeTaskPayload({ title: 'P0 高优任务-抢占', priority: 0, wsName: `pv0-${Date.now().toString(36)}` }));
+  await a.post(`/tasks/${p0.id}/start`);
   const hit = await waitForStatus(S.base, slow.id, 'interrupted', 8000).catch(() => null);
-  assert.ok(hit, 'P2 任务应被抢占 → interrupted');
+  assert.ok(hit, '行序靠后的运行任务应被抢占 → interrupted');
   const evs = await a.get(`/tasks/${slow.id}/events?since=0`);
   assert.ok(evs.some((e) => e.kind === 'system' && e.payload.text.includes('被抢占')), '应有“被抢占”系统事件');
-  // P0 先跑完
+  // 行序靠前的任务先跑完
   await waitForStatus(S.base, p0.id, 'awaiting_confirm', 15000);
   await a.post(`/tasks/${p0.id}/confirm`);
   const p0row = await waitForStatus(S.base, p0.id, 'done', 5000);
   assert.equal(p0row.status, 'done');
-  // 被抢占的 P2 任务随后自动恢复（断点续跑）→ 完成
+  // 被抢占的任务随后自动恢复（断点续跑）→ 完成
   await waitForStatus(S.base, slow.id, 'awaiting_confirm', 30000);
   await a.post(`/tasks/${slow.id}/confirm`);
   const srow = await a.get(`/tasks/${slow.id}`);
   assert.equal(srow.status, 'done');
-  assert.ok(p0row.finished_at < srow.finished_at, 'P0 应先于 P2 完成');
+  assert.ok(p0row.finished_at < srow.finished_at, '行序靠前的任务应先完成');
   await a.put('/settings', { concurrency: 2 });
 });
 
@@ -429,4 +431,77 @@ test('P3 设置：contextWindow 钳制 + promptTemplates 读写 + 恢复默认',
   await a.put('/settings', { contextWindow: 99999999999 });
   assert.equal((await a.get('/settings')).contextWindow, 10_000_000, '超上限钳制');
   await a.put('/settings', { contextWindow: old.contextWindow ?? 0, promptTemplates: {} });
+});
+
+// ---------------- 依赖关系与拖动排序 ----------------
+
+test('依赖：父在下方自动移到子上方一行；环/自依赖拒绝；可移除', async () => {
+  const A = await createTask(a, boardId.v, makeTaskPayload({ title: 'dep-A' }));
+  const B = await createTask(a, boardId.v, makeTaskPayload({ title: 'dep-B' }));
+  // A 先建（在上），B 依赖 A → 顺序不变
+  await a.post(`/tasks/${B.id}/deps`, { parent_id: A.id });
+  let list = (await a.get(`/boards/${boardId.v}/tasks`)).sort((x, y) => x.sort_order - y.sort_order);
+  const iA = list.findIndex((x) => x.id === A.id);
+  const iB = list.findIndex((x) => x.id === B.id);
+  assert.ok(iA < iB, '父任务在子任务上方');
+  // C 依赖 D，但 D 建在 C 下方 → D 自动移到 C 正上方
+  const C = await createTask(a, boardId.v, makeTaskPayload({ title: 'dep-C' }));
+  const D = await createTask(a, boardId.v, makeTaskPayload({ title: 'dep-D' }));
+  await a.post(`/tasks/${C.id}/deps`, { parent_id: D.id });
+  list = (await a.get(`/boards/${boardId.v}/tasks`)).sort((x, y) => x.sort_order - y.sort_order);
+  const iC = list.findIndex((x) => x.id === C.id);
+  const iD = list.findIndex((x) => x.id === D.id);
+  assert.equal(iD + 1, iC, '父任务自动移到子任务正上方');
+  // 环：B 依赖 A 已存在 → A 依赖 B 被拒
+  await assert.rejects(a.post(`/tasks/${A.id}/deps`, { parent_id: B.id }), /循环/);
+  // 自依赖被拒
+  await assert.rejects(a.post(`/tasks/${A.id}/deps`, { parent_id: A.id }), /自己/);
+  // 移除依赖
+  await a.del(`/tasks/${B.id}/deps/${A.id}`);
+  assert.equal((await a.get(`/tasks/${B.id}`)).deps?.length, 0);
+});
+
+test('拖动排序：reorder 重排整行；加依赖后约束自动维持', async () => {
+  const X = await createTask(a, boardId.v, makeTaskPayload({ title: 'ord-X' }));
+  const Y = await createTask(a, boardId.v, makeTaskPayload({ title: 'ord-Y' }));
+  const Z = await createTask(a, boardId.v, makeTaskPayload({ title: 'ord-Z' }));
+  // 顺序 X Y Z → 把 Z 拖到 X 之前（相对位置变化；整个项目可能还有其他任务）
+  await a.post(`/tasks/${Z.id}/reorder`, { targetId: X.id, pos: 'before' });
+  let list = (await a.get(`/boards/${boardId.v}/tasks`)).sort((x, y) => x.sort_order - y.sort_order);
+  let iz = list.findIndex((x) => x.id === Z.id);
+  let ix = list.findIndex((x) => x.id === X.id);
+  let iy = list.findIndex((x) => x.id === Y.id);
+  assert.ok(iz < ix && iz < iy, 'Z 拖到了 X/Y 之前');
+  // Z 依赖 Y → Y 自动移到 Z 至少上一行
+  await a.post(`/tasks/${Z.id}/deps`, { parent_id: Y.id });
+  list = (await a.get(`/boards/${boardId.v}/tasks`)).sort((x, y) => x.sort_order - y.sort_order);
+  const iz2 = list.findIndex((x) => x.id === Z.id);
+  const iy2 = list.findIndex((x) => x.id === Y.id);
+  assert.ok(iy2 < iz2, '父任务在子任务上方');
+  // 再把 Z 拖到 Y 下方（合法：父在上子在下，允许）
+  await a.post(`/tasks/${Z.id}/reorder`, { targetId: Y.id, pos: 'after' });
+  list = (await a.get(`/boards/${boardId.v}/tasks`)).sort((x, y) => x.sort_order - y.sort_order);
+  const jz = list.findIndex((x) => x.id === Z.id);
+  const jy = list.findIndex((x) => x.id === Y.id);
+  assert.ok(jy < jz, '拖动后约束仍满足');
+  await a.del(`/tasks/${Z.id}/deps/${Y.id}`); // 清理
+});
+
+test('调度：父未完成时子任务留在队列（状态栏提示），父完成后子任务自动启动', async () => {
+  const P = await createTask(a, boardId.v, makeTaskPayload({ title: 'dep-parent #slow' }));
+  const C = await createTask(a, boardId.v, makeTaskPayload({ title: 'dep-child' }));
+  await a.post(`/tasks/${C.id}/deps`, { parent_id: P.id });
+  await a.post(`/tasks/${P.id}/start`);
+  await a.post(`/tasks/${C.id}/start`);
+  // 轮询等 tick（1s 周期）：子任务留在队列且状态栏提示等待父任务
+  let tC = null;
+  for (let i = 0; i < 30; i++) {
+    await new Promise((r) => setTimeout(r, 300));
+    tC = await a.get(`/tasks/${C.id}`);
+    if (tC.status === 'queued' && /父任务/.test(tC.current_action ?? '')) break;
+  }
+  assert.equal(tC.status, 'queued', '父任务运行中，子任务留在队列');
+  assert.ok(/父任务/.test(tC.current_action ?? ''), '状态栏提示等待父任务');
+  // 父任务 #slow（~5s）验收通过（awaiting_confirm 解锁）→ 子任务自动启动并走完
+  await waitForStatus(S.base, C.id, 'awaiting_confirm', 30_000);
 });
