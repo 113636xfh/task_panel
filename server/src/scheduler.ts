@@ -10,11 +10,14 @@ import { StubRunner } from './runner-stub.js';
 export type AnyRunner = {
   start(t: TaskRow): Promise<void>;
   resume(t: TaskRow, plan: Plan, answers: Record<string, string>, pendingMsgs: string[]): Promise<void>;
+  chat(t: TaskRow, text: string): Promise<void>;
   steer(text: string): void;
   stop(): void;
 };
 
 const runners = new Map<string, AnyRunner>();
+// chat：done/awaiting_confirm 后的提问回复（不占任务槽位池，与 runners 独立）
+const chats = new Map<string, AnyRunner>();
 const runtimers: NodeJS.Timeout[] = [];
 
 // ---------------- 事件落库 + 广播 ----------------
@@ -411,6 +414,29 @@ export function messageTask(taskId: string, text: string) {
   } else {
     db.prepare('INSERT INTO task_user_msgs (task_id, text, at) VALUES (?,?,?)').run(taskId, text, Date.now());
   }
+  return { ok: true };
+}
+
+// 提问（chat）：任务 done/awaiting_confirm 后用户直接发消息，agent 复用原会话回复
+// （不改任务状态、不走阶段、不占并发槽位；每任务同时只允许一个 chat）
+export function chatTask(taskId: string, text: string): { ok: boolean; error?: string } {
+  const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(taskId) as TaskRow | undefined;
+  if (!t) return { ok: false, error: 'task not found' };
+  if (t.status !== 'done' && t.status !== 'awaiting_confirm') {
+    return { ok: false, error: `任务完成/待确认后才能提问（当前：${t.status}）` };
+  }
+  if (chats.has(taskId) || runners.has(taskId)) return { ok: false, error: '已有回复进行中或任务正在运行' };
+  // 无 checkpoint 会话文件时 runner.chat 会退化为新上下文回答（事件流里会提示）
+  const settings = getSettings();
+  const runner: AnyRunner =
+    process.env.TP_EXECUTOR === 'stub' ? new StubRunner(t, emitEvent, onRelease, settings) : new TaskRunner(t, emitEvent, onRelease, settings);
+  chats.set(taskId, runner);
+  emitEvent(taskId, 'user_message', { text });
+  db.prepare('INSERT INTO task_user_msgs (task_id, text, at, delivered_at) VALUES (?,?,?,?)').run(taskId, text, Date.now(), Date.now());
+  runner.chat(t, text).catch((e) => {
+    emitEvent(taskId, 'system', { text: `回复失败：${String(e)}` });
+    chats.delete(taskId);
+  });
   return { ok: true };
 }
 

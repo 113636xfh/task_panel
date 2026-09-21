@@ -25,7 +25,8 @@ export const DEFAULT_SETTINGS = {
   execModel: 'Qwen3.8-27B-W4A16-AWQ',
   planMaxTokens: 8192,
   workspacesBase: path.join(ROOT, 'workspaces'),
-  systemPrompt: '',
+  // 默认全局追加提示词：只写本扩展（Task Panel）的协议纪律，不重复 pi 原生规范
+  systemPrompt: 'Task Panel 扩展协议纪律（在 pi 默认规范之上，只补充本面板的规则）：\n- 遇到无法自行判断的问题：写入 work/block.json（question/context/options/recommended），随后立即停止，等待用户拍板。\n- 计划写入 work/plan.json；全部步骤完成后写 work/done.json（含交付总结）并停止。\n- 验收由面板完成，不要自行写验收报告。',
   promptUpdatedAt: null as number | null,
   // P3：会话长度（contextWindow，tokens）；0 = 沿用 models.json 的模型默认值。>0 时为任务构建独立 agent 目录覆盖
   contextWindow: 0,

@@ -625,6 +625,33 @@ export class TaskRunner {
     await this.execLoop(plan, extra || undefined, 'resume');
   }
 
+  /** 提问（chat）：done/awaiting_confirm 后用户直接发消息——切回原会话回答，
+   * 不改任务状态、不走任何阶段；消息/工具事件照常被事件流捕获 */
+  async chat(t: TaskRow, text: string) {
+    this.t = t;
+    this.setupSession();
+    const cp = t.checkpoint_json ? (readJson(t.checkpoint_json) as { session_file?: string } | null) : null;
+    let resumed = false;
+    if (cp?.session_file) {
+      try {
+        if (fs.existsSync(cp.session_file)) {
+          await this.sess!.send({ type: 'switch_session', sessionPath: cp.session_file }, 15_000);
+          await this.sess!.refreshSessionFile();
+          resumed = true;
+        }
+      } catch { /* 切回失败则用新上下文回答 */ }
+    }
+    this.emit(t.id, 'system', { text: resumed ? '回复：已切回原会话（全量上下文）' : '回复：无原会话可切回，用新上下文回答' });
+    const res = await this.sess!.send({ type: 'prompt', message: text });
+    if (!res.success) throw new Error(String(res.error ?? 'prompt 被拒绝'));
+    await this.sess!.refreshSessionFile();
+    this.saveCheckpoint('chat', '回复');
+    await this.sess!.waitSettled(300_000);
+    this.refreshContextStats();
+    this.closeSession();
+    this.release();
+  }
+
   private async planPhase(reworkMsgs: string[] = []) {
     const t = this.t;
     const s = this.settings;

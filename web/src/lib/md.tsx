@@ -4,7 +4,8 @@ type Node =
   | { t: 'p'; children: Inline[] }
   | { t: 'h'; level: number; children: Inline[] }
   | { t: 'ul' | 'ol'; items: Inline[][] }
-  | { t: 'pre'; code: string };
+  | { t: 'pre'; code: string }
+  | { t: 'table'; head: string[]; rows: string[][] };
 
 type Inline =
   | { t: 'text'; s: string }
@@ -78,6 +79,14 @@ function parseBlocks(text: string): Node[] {
       const items: Inline[][] = [];
       while (i < lines.length && /^\s*\d+[.、]\s+/.test(lines[i])) items.push(parseInline(lines[i++].replace(/^\s*\d+[.、]\s+/, '')));
       blocks.push({ t: 'ol', items });
+    } else if (l.trim().startsWith('|') && i + 1 < lines.length && /\|/.test(lines[i + 1]) && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1]) && lines[i + 1].includes('-')) {
+      // 表格：| 头 | 分隔行 |... （GFM 风格，cell 内联 markdown 保留）
+      const parseRow = (x: string) => x.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+      const head = parseRow(l);
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && lines[i].trim().startsWith('|')) rows.push(parseRow(lines[i++]));
+      blocks.push({ t: 'table', head, rows });
     } else if (l.trim() === '') {
       i++;
     } else if (/^!\[/.test(l.trim())) {
@@ -104,6 +113,19 @@ export function MD({ text, imgBase }: { text: string; imgBase?: string }) {
             return <Tag key={i}>{renderInline(b.children, i, imgBase)}</Tag>;
           }
           case 'pre': return <pre key={i}>{b.code}</pre>;
+          case 'table':
+            return (
+              <table key={i} className="md-table">
+                <thead>
+                  <tr>{b.head.map((c, j) => <th key={j}>{renderInline(parseInline(c), `${i}-h${j}`, imgBase)}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {b.rows.map((r, k) => (
+                    <tr key={k}>{b.head.map((_, j) => <td key={j}>{renderInline(parseInline(r[j] ?? ''), `${i}-${k}-${j}`, imgBase)}</td>)}</tr>
+                  ))}
+                </tbody>
+              </table>
+            );
           case 'ul': return <ul key={i}>{b.items.map((it, j) => <li key={j}>{renderInline(it, `${i}-${j}`, imgBase)}</li>)}</ul>;
           case 'ol': return <ol key={i}>{b.items.map((it, j) => <li key={j}>{renderInline(it, `${i}-${j}`, imgBase)}</li>)}</ol>;
           default: return <p key={i}>{renderInline(b.children, i, imgBase)}</p>;

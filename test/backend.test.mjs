@@ -371,6 +371,55 @@ test('P3 全部模式：事件流含完整 message（注入标签/思考/工具�
   assert.equal(typeof row.current_action, 'string');
 });
 
+test('chat：done 任务提问 → 回复事件流可见，状态保持 done；运行中任务拒绝', async () => {
+  const t = await createAndStart(a, boardId.v, makeTaskPayload({ title: 'chat 提问测试', wsName: `ch-${Date.now().toString(36)}` }));
+  await waitForStatus(S.base, t.id, 'awaiting_confirm', 30_000);
+  await a.post(`/tasks/${t.id}/confirm`);
+  await waitForStatus(S.base, t.id, 'done');
+  const c = await a.post(`/tasks/${t.id}/chat`, { text: '交付物总大小是多少？' });
+  assert.equal(c.ok, true);
+  // stub 回复很快；等 assistant 事件出现
+  let evs = [];
+  for (let i = 0; i < 20; i++) {
+    await new Promise((r) => setTimeout(r, 300));
+    evs = await a.get(`/tasks/${t.id}/events?since=0`);
+    if (evs.some((e) => e.kind === 'assistant' && String(e.payload.text).includes('stub 回复'))) break;
+  }
+  assert.ok(evs.some((e) => e.kind === 'assistant' && String(e.payload.text).includes('stub 回复')), 'chat 回复事件');
+  const row = await a.get(`/tasks/${t.id}`);
+  assert.equal(row.status, 'done', '状态不变（仍是 done）');
+  // 运行中任务不能提问
+  const t2 = await createAndStart(a, boardId.v, makeTaskPayload({ title: '#slow 慢任务-chat 拒绝对象', wsName: `ch2-${Date.now().toString(36)}` }));
+  await waitForStatus(S.base, t2.id, 'executing');
+  let err = null;
+  try { await a.post(`/tasks/${t2.id}/chat`, { text: 'x' }); } catch (e) { err = e; }
+  assert.ok(err, '非 done/待确认 状态 chat 应被拒');
+  await waitForStatus(S.base, t2.id, 'awaiting_confirm', 30_000);
+  await a.post(`/tasks/${t2.id}/confirm`);
+  await waitForStatus(S.base, t2.id, 'done');
+});
+
+test('产物：assets 合并工作区实际文件（排除 work/.pi/node_modules）', async () => {
+  const t = await createAndStart(a, boardId.v, makeTaskPayload({ title: '产物扫描测试', wsName: `as-${Date.now().toString(36)}` }));
+  await waitForStatus(S.base, t.id, 'awaiting_confirm', 30_000);
+  const ws = (await a.get(`/tasks/${t.id}`)).workspace_path;
+  fs.mkdirSync(ws, { recursive: true });
+  fs.writeFileSync(path.join(ws, 'index.html'), '<html>stub</html>');
+  fs.mkdirSync(path.join(ws, 'node_modules', 'x'), { recursive: true });
+  fs.writeFileSync(path.join(ws, 'node_modules', 'x', 'y.js'), '// dep');
+  fs.mkdirSync(path.join(ws, '.pi'), { recursive: true });
+  fs.mkdirSync(path.join(ws, 'work'), { recursive: true });
+  fs.writeFileSync(path.join(ws, 'work', 'output.txt'), 'work 下的业务产物');
+  const assets = await a.get(`/tasks/${t.id}/assets`);
+  const paths = assets.map((x) => String(x.path_or_url).replace(/\\/g, '/'));
+  assert.ok(paths.includes('index.html'), '工作区根文件出现');
+  assert.ok(paths.includes('work/output.txt'), 'work/ 下业务产物出现');
+  assert.ok(!paths.some((p) => p.includes('node_modules')), 'node_modules 被排除');
+  assert.ok(!paths.some((p) => p.startsWith('.pi/')), '.pi 被排除');
+  assert.ok(paths.includes('work/plan.json'), '协议产物保留');
+  assert.ok(!paths.includes('work/done.json'), 'done.json 等协议文件不重复列出');
+});
+
 test('P3 设置：contextWindow 钳制 + promptTemplates 读写 + 恢复默认', async () => {
   const old = await a.get('/settings');
   await a.put('/settings', { contextWindow: 32768, promptTemplates: { plan: '自定义规划模板 {{title}}' } });

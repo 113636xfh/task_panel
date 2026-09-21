@@ -74,6 +74,11 @@ export class StubRunner {
     this.onRelease(this.t.id);
   }
 
+  async chat(_t: TaskRow, text: string) {
+    this.emit(this.t.id, 'assistant', { text: `stub 回复：${text.slice(0, 80)}` });
+    this.release();
+  }
+
   steer(text: string) {
     const cur = db.prepare('SELECT status FROM tasks WHERE id=?').get(this.t.id) as { status: string } | undefined;
     const running = cur?.status === 'executing';

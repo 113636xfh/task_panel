@@ -6,7 +6,7 @@ import { PROMPT_DEFAULTS } from './prompts.js';
 import { publish } from './bus.js';
 import { inventory, installToTask, installFileToTask, removeTaskSkill } from './skills.js';
 import {
-  emitEvent, runtimeStats, answerTask, answerBlock, confirmTask, cancelTask, messageTask, pauseTask, resumeTask,
+  emitEvent, runtimeStats, answerTask, answerBlock, confirmTask, cancelTask, messageTask, pauseTask, resumeTask, chatTask,
 } from './scheduler.js';
 import { runCmd, pickDirectory } from './util.js';
 
@@ -216,8 +216,54 @@ api.get('/tasks/:id/events', (req, res) => {
   res.json(rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) })));
 });
 
+function fmtSize(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
 api.get('/tasks/:id/assets', (req, res) => {
-  const rows = db.prepare('SELECT id, kind, name, path_or_url, summary, at FROM task_assets WHERE task_id=? ORDER BY at').all(req.params.id);
+  const rows = db.prepare('SELECT id, kind, name, path_or_url, summary, at FROM task_assets WHERE task_id=? ORDER BY at').all(req.params.id) as any[];
+  const t = db.prepare('SELECT workspace_path FROM tasks WHERE id=?').get(req.params.id) as { workspace_path: string } | undefined;
+  // 合并工作区实际文件（agent 生成的业务产物；排除协议目录/依赖），按路径去重
+  if (t) {
+    const existing = new Set(rows.map((r) => String(r.path_or_url).replace(/\\/g, '/')));
+    const files: { path_or_url: string; size: number; mtime: number }[] = [];
+    const walk = (dir: string, rel: string) => {
+      if (files.length >= 300) return;
+      let es: fs.Dirent[] = [];
+      try {
+        es = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of es) {
+        if (e.isDirectory()) {
+          if (['.git', 'node_modules', 'dist', '.pi'].includes(e.name)) continue;
+          walk(path.join(dir, e.name), rel ? `${rel}/${e.name}` : e.name);
+        } else {
+          let st: fs.Stats;
+          try {
+            st = fs.statSync(path.join(dir, e.name));
+          } catch {
+            continue;
+          }
+          files.push({ path_or_url: rel ? `${rel}/${e.name}` : e.name, size: st.size, mtime: st.mtimeMs });
+        }
+      }
+    };
+    walk(t.workspace_path, '');
+    // 排除协议文件（有专门的事件/标签页）与用户上传的输入图
+    const PROTO = new Set(['work/plan.json', 'work/done.json', 'work/review.json', 'work/block.json']);
+    for (const f of files) {
+      const key = f.path_or_url.replace(/\\/g, '/');
+      if (PROTO.has(key) || key.startsWith('work/images/')) continue;
+      if (existing.has(key)) continue;
+      const name = key.split('/').pop() ?? key;
+      rows.push({ kind: 'file', name, path_or_url: f.path_or_url, summary: fmtSize(f.size), at: f.mtime });
+    }
+    rows.sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
+  }
   res.json(rows);
 });
 
@@ -328,6 +374,25 @@ api.post('/tasks/:id/start', (req, res) => {
   emitEvent(t.id, 'system', { text: from === 'failed' ? '已重试：从断点重跑（已完成步骤不重放）' : '已手动开始：进入打磨队列' });
   publish('task.status', { taskId: t.id, to: 'queued', from });
   res.json({ ok: true });
+});
+
+// 提问：done/awaiting_confirm 任务直接发消息，agent 复用原会话回复（不改任务状态）
+api.post('/tasks/:id/chat', (req, res) => {
+  const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(req.params.id) as TaskRow | undefined;
+  if (!t) return res.status(404).json({ error: 'not found' });
+  const text = String(req.body?.text ?? '').trim();
+  if (!text) return res.status(400).json({ error: '请填写问题' });
+  let final = text;
+  const nums = (Array.isArray(req.body?.images) ? (req.body.images as unknown[]) : [])
+    .map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0);
+  if (nums.length) {
+    const list = listTaskImages(t.id);
+    const items = nums.map((n) => list.find((i) => i.num === n)).filter(Boolean) as { num: number; path: string }[];
+    final += imageMapBlock(items);
+  }
+  const r = chatTask(t.id, final);
+  if (!r.ok) return res.status(409).json(r);
+  res.json(r);
 });
 
 // P3：返工——完成/待确认任务写留言（可附图）→ 打回打磨（复用原会话，不限次数）

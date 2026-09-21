@@ -476,6 +476,11 @@ select.inp { appearance: auto; }
 .steer-row { display: flex; gap: 8px; margin-top: 10px; }
 .steer-row .inp { flex: 1; }
 .steer-hint { font-size: 11px; color: var(--text-3); margin-top: 5px; }
+/* markdown 表格 */
+.md-table { border-collapse: collapse; margin: 0.6em 0; max-width: 100%; font-size: 0.95em; }
+.md-table th, .md-table td { border: 1px solid var(--line); padding: 4px 10px; text-align: left; vertical-align: top; }
+.md-table th { background: color-mix(in srgb, var(--text-3) 8%, var(--bg)); font-weight: 600; }
+.md-table td { color: var(--text-2); }
 
 /* ============ 弹窗 ============ */
 .modal-bg {
@@ -1468,6 +1473,25 @@ input[type='number'].num-inp { min-width: 110px; }
 .ev-think summary::-webkit-details-marker { display: none; }
 .ev-think .ev-think-label { font-weight: 500; }
 .ev-think .ev-think-body { margin: 0; }
+/* 工具调用结果（summary 模式，TUI 式：缩进在工具行下方） */
+.ev-toolres .toolres-pre {
+  margin: 2px 0;
+  padding: 5px 9px;
+  font-family: var(--font-mono);
+  font-size: 11.3px;
+  line-height: 1.5;
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--text-3) 5%, var(--bg));
+  border-left: 2px solid var(--line-strong);
+  border-radius: 0 4px 4px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ev-toolres.err .toolres-pre { color: var(--red); border-left-color: var(--red); }
+.toolres-box { margin: 2px 0; }
+.toolres-box summary { cursor: pointer; color: var(--text-3); font-size: 11.5px; list-style: none; }
+.toolres-box summary::-webkit-details-marker { display: none; }
+.toolres-box .toolres-pre { margin-top: 4px; }
 /* 实时思维/文本流（task.stream 增量块，随 token 增长） */
 .live-ico { flex: none; color: var(--text-3); }
 .think-inline-ico { vertical-align: -2px; margin-right: 6px; color: var(--text-3); flex: none; }

@@ -375,7 +375,33 @@ function EvRow({ ev, plan, imgBase, onPreview }: { ev: TaskEvent; plan: Plan | n
         </div>
       );
     case 'message': {
-      // full 模式由 buildUnits/AstUnit 渲染完整内容；summary 模式只补思维链
+      // full 模式由 buildUnits/AstUnit 渲染完整内容；summary 模式补思维链 + 工具结果
+      if (p.role === 'toolResult') {
+        const text = ((p.parts ?? []) as any[])
+          .filter((c: any) => c.type === 'text')
+          .map((c: any) => c.text)
+          .join('\n')
+          .trim();
+        if (!text) return null;
+        const long = text.length > 600;
+        return (
+          <div className={`ev ev-toolres${p.isError ? ' err' : ''}`}>
+            <span className="ev-t" />
+            <div className="ev-body">
+              {long ? (
+                <details className="toolres-box">
+                  <summary>
+                    {t('ev.result')}（{text.length} {t('ev.chars')}）
+                  </summary>
+                  <pre className="toolres-pre">{text}</pre>
+                </details>
+              ) : (
+                <pre className="toolres-pre">{text}</pre>
+              )}
+            </div>
+          </div>
+        );
+      }
       //（正文由同回合的 assistant 行承载，避免重复）
       const thinks = ((p.parts ?? []) as any[]).filter((c: any) => c.type === 'thinking' && c.text);
       if (!thinks.length) return null;
@@ -575,6 +601,7 @@ export default function TaskDetail() {
         if (feedFilter === 'review') return false;
         if (feedFilter === 'system') return false;
       }
+      if (mode !== 'full' && e.kind === 'message' && p.role === 'toolResult') return feedFilter === 'exec';
       const groups: Record<string, string[]> = {
         user: ['user_message'],
         exec: ['planned', 'step', 'tool', 'asset', 'subagent'],
@@ -611,7 +638,10 @@ export default function TaskDetail() {
     if (!txt) return;
     // 返工模式（done / awaiting_confirm）：同一输入框走 rework 通道，复用任务会话
     const t0 = task;
-    const isRework = reworkMode && !!t0 && (t0.status === 'done' || t0.status === 'awaiting_confirm');
+    const terminal = !!t0 && (t0.status === 'done' || t0.status === 'awaiting_confirm');
+    const isRework = reworkMode && terminal;
+    // 完成/待确认时普通发消息 = 提问（复用原会话直接回复，不打回重跑）
+    const isChat = !reworkMode && terminal;
     try {
       if (isRework) {
         await api.rework(id, { text: txt, images: draftImgs.map((i) => i.num) });
@@ -619,6 +649,9 @@ export default function TaskDetail() {
         setReworkMode(false);
         setLongMode(false);
         reloadTask();
+      } else if (isChat) {
+        await api.chat(id, txt, draftImgs.map((i) => i.num));
+        setLongMode(false);
       } else {
         await api.message(id, txt, draftImgs.map((i) => i.num));
         setLongMode(false);
@@ -998,7 +1031,7 @@ export default function TaskDetail() {
               <input
                 className="inp"
                 data-testid="input-msg-short"
-                placeholder={running ? t('feed.steerPh.active') : t('feed.steerPh')}
+                placeholder={running ? t('feed.steerPh.active') : ['done', 'awaiting_confirm'].includes(task.status) ? t('feed.steerPh.chat') : t('feed.steerPh')}
                 value={msg}
                 onChange={(e) => setMsg(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && sendMsg()}
@@ -1010,7 +1043,7 @@ export default function TaskDetail() {
                 <Send size={13} /> {t('feed.send')}
               </button>
             </div>
-            <div className="steer-hint">{running ? t('feed.hint.running') : t('feed.hint.inactive')}</div>
+            <div className="steer-hint">{running ? t('feed.hint.running') : ['done', 'awaiting_confirm'].includes(task.status) ? t('feed.hint.done') : t('feed.hint.inactive')}</div>
           </>
         )}
       </div>
