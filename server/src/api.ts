@@ -164,7 +164,7 @@ api.delete('/boards/:id', (req, res) => {
 // P3：跨项目全量任务（首页总表用；含 board_name）
 api.get('/tasks/all', (_req, res) => {
   const rows = db.prepare(
-    'SELECT t.*, b.name AS board_name FROM tasks t JOIN boards b ON b.id = t.board_id ORDER BY b.name, t.created_at'
+    'SELECT t.*, b.name AS board_name FROM tasks t JOIN boards b ON b.id = t.board_id ORDER BY t.sort_order ASC, t.created_at ASC'
   ).all() as unknown as TaskRow[];
   res.json(rows.map(taskFromRow));
 });
@@ -305,7 +305,6 @@ function createTaskInBoard(boardId: string, body: any): { status: number; result
   }
 
   const num = ((db.prepare('SELECT COALESCE(MAX(num),0)+1 n FROM tasks WHERE board_id=?').get(b.id) as { n: number }).n);
-  const so = ((db.prepare('SELECT COALESCE(MAX(sort_order),0)+1 n FROM tasks WHERE board_id=?').get(b.id) as { n: number }).n);
   // 唯一化目录
   let dir = workspace, i = num;
   while (fs.existsSync(dir) && ws.mode === 'fresh') dir = path.join(settings.workspacesBase, `${path.basename(workspace)}-${i++}`);
@@ -314,6 +313,9 @@ function createTaskInBoard(boardId: string, body: any): { status: number; result
   const id = uid('t');
   const at = Date.now();
   const prio = Math.min(3, Math.max(0, Number(body.priority ?? 2)));
+  // 全局执行顺序：值分层 priority*1e9 + 层内序号（新任务落在同优先级最下，P0 全部在 P1 之上）
+  const maxInTier = (db.prepare('SELECT COALESCE(MAX(sort_order),0) n FROM tasks WHERE priority=?').get(prio) as { n: number }).n;
+  const so = maxInTier + (maxInTier === 0 ? prio * 1_000_000_000 : 0) + 1;
   const cw = Math.min(10_000_000, Math.max(0, Math.round(Number(body.context_window ?? 0)) || 0));
   db.prepare(
     `INSERT INTO tasks (id, board_id, num, title, description, priority, status, created_at, workspace_path,
@@ -371,8 +373,14 @@ function addDep(childId: string, parentId: string): { ok: boolean; error?: strin
   }
   if (descendants.has(parentId)) return { ok: false, error: '循环依赖' };
   db.prepare('INSERT INTO task_deps (parent_id, child_id, created_at) VALUES (?,?,?)').run(parentId, childId, Date.now());
-  enforceDeps(child.board_id); // 父任务自动移到子任务至少上一行
-  emitEvent(childId, 'system', { text: `已添加依赖：「${parent.title}」完成后才开始` });
+  // 父任务优先级自动提升到与子任务相同（若原本更低），并排到子任务至少上一行
+  let note = '';
+  if (parent.priority > child.priority) {
+    db.prepare('UPDATE tasks SET priority=? WHERE id=?').run(child.priority, parentId);
+    note = `，其优先级自动调整为 P${child.priority}`;
+  }
+  enforceDeps();
+  emitEvent(childId, 'system', { text: `已添加依赖：「${parent.title}」完成后才开始${note}` });
   publish('boards.changed', {});
   return { ok: true };
 }
@@ -383,19 +391,19 @@ function removeDep(childId: string, parentId: string) {
   publish('boards.changed', {});
 }
 
-// 强制约束：每个依赖的父任务必须严格排在子任务上方（至少一行）→ 自动把父任务移到子任务正上方
-function enforceDeps(boardId: string) {
+// 强制约束（全局）：每个依赖的父任务必须严格排在子任务上方（至少一行）→ 自动把父任务移到子任务正上方
+function enforceDeps() {
   for (let i = 0; i < 50; i++) {
     const bad = db
       .prepare(
-        "SELECT td.parent_id, td.child_id FROM task_deps td JOIN tasks a ON a.id=td.parent_id JOIN tasks b ON b.id=td.child_id WHERE a.board_id=? AND a.sort_order > b.sort_order LIMIT 1"
+        "SELECT td.parent_id, td.child_id FROM task_deps td JOIN tasks a ON a.id=td.parent_id JOIN tasks b ON b.id=td.child_id WHERE a.sort_order > b.sort_order LIMIT 1"
       )
-      .get(boardId) as { parent_id: string; child_id: string } | undefined;
+      .get() as { parent_id: string; child_id: string } | undefined;
     if (!bad) return;
-    const ids = (db.prepare('SELECT id FROM tasks WHERE board_id=? ORDER BY sort_order ASC').all(boardId) as { id: string }[]).map((x) => x.id);
-    ids.splice(ids.indexOf(bad.parent_id), 1);
-    ids.splice(ids.indexOf(bad.child_id), 0, bad.parent_id); // 移到 child 正上方
-    ids.forEach((id2, j) => db.prepare('UPDATE tasks SET sort_order=? WHERE id=?').run(j + 1, id2));
+    const childSo = (db.prepare('SELECT sort_order FROM tasks WHERE id=?').get(bad.child_id) as { sort_order: number }).sort_order;
+    const prv = db.prepare('SELECT sort_order FROM tasks WHERE sort_order < ? ORDER BY sort_order DESC LIMIT 1').get(childSo) as { sort_order: number } | undefined;
+    const lo = prv ? prv.sort_order : childSo - 0.5;
+    db.prepare('UPDATE tasks SET sort_order=? WHERE id=?').run((lo + childSo) / 2, bad.parent_id); // 子任务正上方
   }
 }
 
@@ -410,7 +418,7 @@ api.delete('/tasks/:id/deps/:parentId', (req, res) => {
   res.json({ ok: true });
 });
 
-// 拖动排序：把任务移到 targetId 前/后（整个项目重编号 + 自动修正依赖顺序）
+// 拖动排序（全局序列，可跨项目）：把任务插到 targetId 前/后（小数中点插值，不动其他行），再强制依赖约束
 api.post('/tasks/:id/reorder', (req, res) => {
   const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(req.params.id) as TaskRow | undefined;
   if (!t) return res.status(404).json({ error: 'not found' });
@@ -418,15 +426,21 @@ api.post('/tasks/:id/reorder', (req, res) => {
   const pos = req.body?.pos === 'after' ? 'after' : 'before';
   const tg = db.prepare('SELECT * FROM tasks WHERE id=?').get(targetId) as TaskRow | undefined;
   if (!tg) return res.status(404).json({ error: 'not found' });
-  if (t.board_id !== tg.board_id) return res.status(400).json({ error: '不能跨项目拖动' });
   if (t.id === tg.id) return res.json({ ok: true });
-  const ids = (db.prepare('SELECT id FROM tasks WHERE board_id=? ORDER BY sort_order ASC').all(t.board_id) as { id: string }[]).map((x) => x.id);
-  ids.splice(ids.indexOf(t.id), 1);
-  const ti = ids.indexOf(tg.id);
-  if (ti < 0) return res.json({ ok: true });
-  ids.splice(pos === 'after' ? ti + 1 : ti, 0, t.id);
-  ids.forEach((id2, i) => db.prepare('UPDATE tasks SET sort_order=? WHERE id=?').run(i + 1, id2));
-  enforceDeps(t.board_id);
+  const tso = tg.sort_order ?? 0;
+  let lo: number, hi: number;
+  if (pos === 'after') {
+    lo = tso;
+    const nxt = db.prepare('SELECT sort_order FROM tasks WHERE sort_order > ? ORDER BY sort_order ASC LIMIT 1').get(tso) as { sort_order: number } | undefined;
+    hi = nxt ? nxt.sort_order : lo + 1;
+  } else {
+    const prv = db.prepare('SELECT sort_order FROM tasks WHERE sort_order < ? ORDER BY sort_order DESC LIMIT 1').get(tso) as { sort_order: number } | undefined;
+    lo = prv ? prv.sort_order : tso - 1;
+    hi = tso;
+  }
+  const val = hi - lo < 1e-9 ? tso + (pos === 'after' ? 0.5 : -0.5) : (lo + hi) / 2;
+  db.prepare('UPDATE tasks SET sort_order=? WHERE id=?').run(val, t.id);
+  enforceDeps();
   publish('boards.changed', {});
   res.json({ ok: true });
 });

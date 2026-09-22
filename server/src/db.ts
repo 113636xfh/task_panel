@@ -51,6 +51,18 @@ export const DEFAULT_SETTINGS = {
       rows.forEach((r, i) => db.prepare('UPDATE tasks SET sort_order=? WHERE id=?').run(i + 1, r.id));
     }
   }
+  // v3：首页/执行顺序 = 全局序列（不分项目）；值分层：priority*1e9 + 层内序号（P0 全在 P1 之上）
+  const verRow = db.prepare('PRAGMA user_version').get() as unknown;
+  const ver = (verRow && typeof verRow === 'object' && 'user_version' in verRow) ? Number((verRow as { user_version: number }).user_version) : 0;
+  if (ver < 3) {
+    const rows = db.prepare('SELECT id, priority FROM tasks ORDER BY priority ASC, created_at ASC').all() as { id: string; priority: number }[];
+    const rank: Record<number, number> = {};
+    for (const r of rows) {
+      rank[r.priority] = (rank[r.priority] ?? 0) + 1;
+      db.prepare('UPDATE tasks SET sort_order=? WHERE id=?').run(r.priority * 1_000_000_000 + rank[r.priority], r.id);
+    }
+    db.exec('PRAGMA user_version = 3');
+  }
 }
 
 export function getSettings() {

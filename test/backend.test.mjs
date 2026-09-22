@@ -505,3 +505,37 @@ test('调度：父未完成时子任务留在队列（状态栏提示），父�
   // 父任务 #slow（~5s）验收通过（awaiting_confirm 解锁）→ 子任务自动启动并走完
   await waitForStatus(S.base, C.id, 'awaiting_confirm', 30_000);
 });
+
+test('首页全局顺序：P0 在 P1/P2 之上（不分项目）；新任务落同优先级最下', async () => {
+  const p2 = await createTask(a, boardId.v, makeTaskPayload({ title: 'tier-P2', priority: 2 }));
+  const p0 = await createTask(a, boardId.v, makeTaskPayload({ title: 'tier-P0', priority: 0 }));
+  const list = (await a.get('/tasks/all')).sort((x, y) => x.sort_order - y.sort_order);
+  const i0 = list.findIndex((x) => x.id === p0.id);
+  const i2 = list.findIndex((x) => x.id === p2.id);
+  assert.ok(i0 < i2, 'P0 行在 P2 行之上');
+  const p1 = await createTask(a, boardId.v, makeTaskPayload({ title: 'tier-P1', priority: 1 }));
+  const list2 = (await a.get('/tasks/all')).sort((x, y) => x.sort_order - y.sort_order);
+  const i02 = list2.findIndex((x) => x.id === p0.id);
+  const i1 = list2.findIndex((x) => x.id === p1.id);
+  const i22 = list2.findIndex((x) => x.id === p2.id);
+  assert.ok(i02 < i1 && i1 < i22, 'P0 < P1 < P2');
+  const p0b = await createTask(a, boardId.v, makeTaskPayload({ title: 'tier-P0b', priority: 0 }));
+  const list3 = (await a.get('/tasks/all')).sort((x, y) => x.sort_order - y.sort_order);
+  const iA = list3.findIndex((x) => x.id === p0.id);
+  const iB = list3.findIndex((x) => x.id === p0b.id);
+  const iM = list3.findIndex((x) => x.id === p1.id);
+  assert.ok(iA < iB && iB < iM, '新 P0 落在同优先级最下、仍在 P1 之上');
+});
+
+test('依赖优先级提升：低优先级父任务加依赖后提升到与子任务同级并排到其正上方', async () => {
+  const parent = await createTask(a, boardId.v, makeTaskPayload({ title: 'promo-parent', priority: 2 }));
+  const child = await createTask(a, boardId.v, makeTaskPayload({ title: 'promo-child', priority: 0 }));
+  // 分层后 child（P0）在 parent（P2）之上；加依赖 → parent 提升为 P0 并移到 child 正上方
+  await a.post(`/tasks/${child.id}/deps`, { parent_id: parent.id });
+  const list = (await a.get('/tasks/all')).sort((x, y) => x.sort_order - y.sort_order);
+  const ip = list.findIndex((x) => x.id === parent.id);
+  const ic = list.findIndex((x) => x.id === child.id);
+  assert.equal(ip + 1, ic, '父任务移到子任务正上方');
+  assert.equal((await a.get(`/tasks/${parent.id}`)).priority, 0, '父任务优先级提升到 P0');
+  await a.del(`/tasks/${child.id}/deps/${parent.id}`); // 清理
+});
