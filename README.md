@@ -1,6 +1,10 @@
-# Task Panel
+<p align="center">
+  <img src="./public/logo.svg" width="72" height="72" alt="Task Panel logo" />
+</p>
 
-本地 Web 端任务编排 / 监控系统：为 Pi coding agent 提供「打磨（规划）→ 执行 → 测试/验收」的自主任务流，外加看板、优先级调度、阻塞决策、实时消息板与三级技能管理。
+<h1 align="center">Task Panel</h1>
+
+<p align="center">本地 Web 端任务编排 / 监控系统：为 Pi coding agent 提供「打磨（规划）→ 执行 → 测试/验收」的自主任务流，外加看板、优先级调度、阻塞决策、实时消息板与三级技能管理。</p>
 
 设计文档见 [docs/design/](docs/design/)（00 总览 → 06 路线图）。
 

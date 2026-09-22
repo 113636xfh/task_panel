@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Task Panel logo：看板三列（等待 → 执行 → 完成），阶梯下降 = 任务从左往右流 -->
+  <rect width="64" height="64" rx="14" fill="#16171a"/>
+  <rect x="11" y="13" width="11" height="38" rx="5.5" fill="#9aa3b5"/>
+  <rect x="26.5" y="21" width="11" height="30" rx="5.5" fill="#2f6feb"/>
+  <rect x="42" y="29" width="11" height="22" rx="5.5" fill="#1a7f37"/>
+</svg>
