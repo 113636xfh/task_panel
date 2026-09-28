@@ -135,7 +135,23 @@ export const zh: Record<string, string> = {
   'board.title': '看板',
   'board.back': '返回',
   'board.newTask': '新任务',
+  'board.importSessions': '导入会话',
   'board.empty': '还没有任务，点右上「新任务」开始。',
+
+  // 导入历史会话（pi JSONL 会话 → 已完成任务）
+  'imp.title': '导入历史会话',
+  'imp.hint': '勾选后导入为「已完成」任务：完整消息流可在任务详情（全部模式）查看，返工时接续原会话。',
+  'imp.search': '搜索标题 / 项目 / 会话 ID…',
+  'imp.includeSelf': '显示 Task Panel 自身的会话',
+  'imp.loading': '加载会话列表…',
+  'imp.empty': '没有匹配的会话',
+  'imp.messages': '条消息',
+  'imp.selected': '已选 {n} 个',
+  'imp.import': '导入到「{board}」',
+  'imp.importing': '导入中…',
+  'imp.done': '已导入 {n} 个历史会话',
+  'imp.fail': '导入失败：',
+  'imp.cancel': '取消',
   'board.waitDep': '等待父任务',
 
   'chip.waiting': '待回答分支',

@@ -3,6 +3,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {
   ROOT, startServer, stopServer, makeApi, waitForStatus, wsCollect, makeTaskPayload, PNG_1X1,
@@ -15,6 +16,23 @@ let S; // 服务句柄
 let a; // api
 const PORT = 18801;
 const boardId = { v: null };
+
+// 会话导入夹具：假 pi 会话目录（TP_SESSIONS_DIR）+ 一个完整小会话 + 工作区 work/plan.json
+const sessDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tp-sess-'));
+const projA = path.join(sessDir, 'proj-a');
+fs.mkdirSync(path.join(projA, 'work'), { recursive: true });
+fs.writeFileSync(path.join(projA, 'work', 'plan.json'), JSON.stringify({ summary: '夹具计划', steps: [{ id: 1, title: '写 hello', done: true }] }));
+fs.writeFileSync(
+  path.join(sessDir, 'proj-a', '2026-01-01T10-00-00_test-sess-1.jsonl'),
+  [
+    JSON.stringify({ type: 'session', version: 3, id: 'test-sess-1', timestamp: '2026-01-01T10:00:00.000Z', cwd: projA }),
+    '{"type":"model_change","id":"m1","parentId":null,"timestamp":"2026-01-01T10:00:01.000Z","provider":"local","modelId":"test-model"}',
+    '{"type":"message","id":"u1","parentId":"m1","timestamp":"2026-01-01T10:00:02.000Z","message":{"role":"user","content":[{"type":"text","text":"请帮我写一个 hello 脚本"}]}}',
+    '{"type":"message","id":"a1","parentId":"u1","timestamp":"2026-01-01T10:00:05.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"好的"},{"type":"text","text":"已完成"},{"type":"toolCall","id":"tc1","name":"bash","arguments":{"command":"ls"}}]}}',
+    '{"type":"message","id":"r1","parentId":"a1","timestamp":"2026-01-01T10:00:06.000Z","message":{"role":"toolResult","toolCallId":"tc1","toolName":"bash","content":[{"type":"text","text":"hello.txt"}]}}',
+  ].join('\n') + '\n',
+);
+process.env.TP_SESSIONS_DIR = sessDir;
 
 before(async () => {
   S = await startServer({ port: PORT });
@@ -538,4 +556,59 @@ test('依赖优先级提升：低优先级父任务加依赖后提升到与子�
   assert.equal(ip + 1, ic, '父任务移到子任务正上方');
   assert.equal((await a.get(`/tasks/${parent.id}`)).priority, 0, '父任务优先级提升到 P0');
   await a.del(`/tasks/${child.id}/deps/${parent.id}`); // 清理
+});
+
+// ---------------- 历史会话导入（pi JSONL → done 任务） ----------------
+
+test('会话导入：列表 / 导入为 done（消息流+checkpoint+资产）/ 防穿越 / 重复导入', async () => {
+  // 列表：夹具会话可见，元信息正确
+  const list = await a.get('/sessions');
+  const sess = list.find((x) => x.id === 'test-sess-1');
+  assert.ok(sess, '夹具会话在列表中');
+  assert.equal(sess.cwd, projA);
+  assert.equal(sess.messages, 3);
+  assert.ok(sess.title.startsWith('请帮我写一个 hello 脚本'));
+  assert.equal(sess.model, 'local/test-model');
+  assert.equal(sess.self, false);
+
+  // 防穿越：会话目录之外的文件拒绝
+  const outside = path.join(os.tmpdir(), 'tp-outside.jsonl');
+  fs.writeFileSync(outside, '{}');
+  const bad = await a.post('/tasks/import', { file: outside, boardId: boardId.v }).catch((e) => String(e));
+  assert.ok(/400|非法/.test(bad), '目录外文件被拒绝：' + bad);
+
+  // 导入：done 任务 + 标题/描述来自首条用户消息
+  const r = await a.post('/tasks/import', { file: sess.file, boardId: boardId.v });
+  assert.ok(r.id);
+  const t = await a.get(`/tasks/${r.id}`);
+  assert.equal(t.status, 'done');
+  assert.equal(t.title, '请帮我写一个 hello 脚本');
+  assert.ok(t.description.includes('hello 脚本'));
+  assert.equal(t.workspace_path, projA);
+  const cp = JSON.parse(t.checkpoint_json);
+  assert.ok(cp.session_file && cp.session_file.endsWith('.jsonl'), 'checkpoint 指向原会话文件');
+  assert.ok(fs.existsSync(cp.session_file), '原会话文件存在（返工可接续）');
+
+  // 事件流：user/assistant(toolCall)/toolResult/system 俱全，原始时间戳保留
+  const evs = await a.get(`/tasks/${r.id}/events`);
+  assert.ok(evs.some((e) => e.kind === 'message' && e.payload.role === 'user'));
+  assert.ok(evs.some((e) => e.kind === 'message' && e.payload.role === 'assistant' && e.payload.parts.some((p) => p.type === 'thinking')));
+  assert.ok(evs.some((e) => e.kind === 'message' && e.payload.role === 'assistant' && e.payload.parts.some((p) => p.type === 'toolCall' && p.name === 'bash')));
+  assert.ok(evs.some((e) => e.kind === 'message' && e.payload.role === 'toolResult' && e.payload.toolName === 'bash'));
+  assert.ok(evs.some((e) => e.kind === 'system' && String(e.payload.text).includes('导入历史会话')));
+  assert.ok(evs.some((e) => e.kind === 'system' && String(e.payload.text).includes('local/test-model')));
+  const ts = evs.map((e) => e.ts);
+  assert.deepEqual([...ts].sort((x, y) => x - y), ts, '事件时间戳单调不减');
+
+  // 资产：工作区 work/plan.json 被收录
+  const assets = await a.get(`/tasks/${r.id}/assets`);
+  assert.ok(assets.some((x) => x.name === 'work/plan.json'), 'work/plan.json 在资产中');
+
+  // 重复导入同一会话 → 新任务（不报重复错误）
+  const r2 = await a.post('/tasks/import', { file: sess.file, boardId: boardId.v });
+  assert.notEqual(r2.id, r.id);
+
+  // 清理
+  await a.del(`/tasks/${r.id}`);
+  await a.del(`/tasks/${r2.id}`);
 });

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { ArrowLeft, Plus, History } from 'lucide-react';
 import { api } from '../lib/api';
 import { onEvent } from '../lib/ws';
 import { useI18n } from '../i18n';
 import KanbanBoard from '../components/KanbanBoard';
 import NewTaskModal from '../components/NewTaskModal';
+import ImportSessionsModal from '../components/ImportSessionsModal';
 import type { Task } from '../lib/types';
 
 const baseName = (p: string) => (p || '').split(/[\\/]/).filter(Boolean).pop() || '—';
@@ -18,7 +19,9 @@ export default function ProjectBoard() {
   const { t } = useI18n();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [all, setAll] = useState<Task[] | null>(null);
+  const [boardId, setBoardId] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [sp, setSp] = useSearchParams();
 
   // 命令面板 ?new=1：自动展开新建任务弹窗
@@ -48,6 +51,11 @@ export default function ProjectBoard() {
     return off;
   }, [proj]);
 
+  // 导入会话需要看板 id（同名看板，后端自动关联）
+  useEffect(() => {
+    api.boards().then((rows) => setBoardId(rows.find((b) => b.name === proj)?.id ?? null)).catch(() => {});
+  }, [proj]);
+
   // 新建任务：预填该项目已有的工作目录（共用模式）
   const defaultWs = all?.find((x) => baseName(x.workspace_path) === proj)?.workspace_path;
 
@@ -62,6 +70,9 @@ export default function ProjectBoard() {
           {tasks.length} {t('boards.card.tasks')}
         </span>
         <span style={{ flex: 1 }} />
+        <button className="btn ghost" data-testid="btn-import-sessions" onClick={() => setShowImport(true)}>
+          <History size={14} /> {t('board.importSessions')}
+        </button>
         <button className="btn primary" data-testid="btn-new-task" onClick={() => setShowNew(true)}>
           <Plus size={14} /> {t('board.newTask')}
         </button>
@@ -74,6 +85,14 @@ export default function ProjectBoard() {
       )}
 
       {showNew && <NewTaskModal defaultWs={defaultWs} onClose={() => setShowNew(false)} onCreated={loadTasks} />}
+      {showImport && boardId && (
+        <ImportSessionsModal
+          boardId={boardId}
+          boardName={proj}
+          onClose={() => setShowImport(false)}
+          onImported={loadTasks}
+        />
+      )}
     </>
   );
 }

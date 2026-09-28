@@ -121,7 +121,23 @@ export const en: Record<string, string> = {
   'board.title': 'Board',
   'board.back': 'Back',
   'board.newTask': 'New task',
+  'board.importSessions': 'Import sessions',
   'board.empty': 'No tasks yet. Click "New task" at the top right to start.',
+
+  // Import historical pi sessions (JSONL → done tasks)
+  'imp.title': 'Import historical sessions',
+  'imp.hint': 'Imported sessions become "done" tasks: the full message stream is viewable in task detail (full mode); rework resumes the original session.',
+  'imp.search': 'Search title / project / session ID…',
+  'imp.includeSelf': 'Show Task Panel’s own sessions',
+  'imp.loading': 'Loading sessions…',
+  'imp.empty': 'No matching sessions',
+  'imp.messages': 'messages',
+  'imp.selected': '{n} selected',
+  'imp.import': 'Import to "{board}"',
+  'imp.importing': 'Importing…',
+  'imp.done': 'Imported {n} session(s)',
+  'imp.fail': 'Import failed: ',
+  'imp.cancel': 'Cancel',
   'board.waitDep': 'Waiting for parent',
 
   'chip.waiting': 'Branch answer pending',

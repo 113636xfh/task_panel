@@ -9,6 +9,7 @@ import {
   emitEvent, runtimeStats, answerTask, answerBlock, confirmTask, cancelTask, messageTask, pauseTask, resumeTask, chatTask,
 } from './scheduler.js';
 import { runCmd, pickDirectory } from './util.js';
+import { listSessions, importSession } from './sessions.js';
 
 import type { TaskRow } from './runner.js';
 
@@ -484,6 +485,22 @@ api.post('/tasks', (req, res) => {
   }
   const { status, result } = createTaskInBoard(b.id, body);
   res.status(status).json(result);
+});
+
+// ---------------- 历史会话导入（pi JSONL 会话 → 已完成任务） ----------------
+api.get('/sessions', (req, res) => {
+  res.json(listSessions({ includeSelf: req.query.self === '1', q: String(req.query.q ?? '') }));
+});
+
+api.post('/tasks/import', (req, res) => {
+  try {
+    const r = importSession(String(req.body?.file ?? ''), String(req.body?.boardId ?? ''), {
+      title: req.body?.title, description: req.body?.description,
+    });
+    res.json(r);
+  } catch (e) {
+    res.status(400).json({ error: String(e) });
+  }
 });
 
 // P3：待准备 → 手动开始（进入打磨队列）

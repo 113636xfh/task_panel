@@ -33,6 +33,17 @@ export const api = {
   tasksInPath: (p: string) => req<{ id: string; title: string; status: string }[]>(`/api/tasks-by-path?path=${encodeURIComponent(p)}`),
   rework: (id: string, body: { text: string; images?: number[] }) =>
     req(`/api/tasks/${id}/rework`, { method: 'POST', body: JSON.stringify(body) }),
+  // 历史会话导入（pi JSONL 会话 → 已完成任务）
+  listSessions: (o: { includeSelf?: boolean; q?: string } = {}) => {
+    const sp = new URLSearchParams();
+    if (o.includeSelf) sp.set('self', '1');
+    if (o.q) sp.set('q', o.q);
+    const qs = sp.toString();
+    return req<any[]>(`/api/sessions${qs ? `?${qs}` : ''}`);
+  },
+  importSession: (body: { file: string; boardId: string; title?: string; description?: string }) =>
+    req<{ id: string; num: number }>('/api/tasks/import', { method: 'POST', body: JSON.stringify(body) }),
+
   // 原生目录选择器（选已有项目目录；取消 → {cancelled:true}）
   pickDirectory: (cwd = '') => req<{ path?: string; cancelled?: boolean } | { error: string }>('/api/fs/pick-directory', { method: 'POST', body: JSON.stringify({ cwd }) }),
   cancel: (id: string) => req(`/api/tasks/${id}/cancel`, { method: 'POST' }),

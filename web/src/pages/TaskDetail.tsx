@@ -546,6 +546,15 @@ export default function TaskDetail() {
         const fresh = since === 0 ? rows : rows.filter((r) => r.seq > lastSeq.current);
         if (fresh.length) setEvents((x) => (since === 0 ? rows : [...x, ...fresh]));
         lastSeq.current = Math.max(lastSeq.current, ...rows.map((r) => r.seq));
+        // 导入的历史会话：只有消息流、无计划/步骤/工具等结构化事件 → 自动切「全部」模式
+        if (
+          since === 0 &&
+          rows.some((r) => r.kind === 'message') &&
+          !rows.some((r) => ['planned', 'step', 'tool', 'asset', 'review', 'block', 'user_message'].includes(r.kind))
+        ) {
+          setMode('full');
+          setFeedFilter('all');
+        }
       })
       .catch(() => {});
   const loadExtra = () => {
