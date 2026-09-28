@@ -4,9 +4,37 @@
 
 <h1 align="center">Task Panel</h1>
 
-<p align="center">本地 Web 端任务编排 / 监控系统：为 Pi coding agent 提供「打磨（规划）→ 执行 → 测试/验收」的自主任务流，外加看板、优先级调度、阻塞决策、实时消息板与三级技能管理。</p>
+<p align="center">
+  本地 Web 端任务编排 / 监控系统：为 <a href="https://github.com/badlogic/pi-mono">Pi coding agent</a>
+  提供「打磨（规划）→ 执行 → 测试/验收」的自主任务流，外加看板、优先级调度、阻塞决策、
+  实时消息板、三级技能管理与历史会话导入。
+</p>
 
-设计文档见 [docs/design/](docs/design/)（00 总览 → 06 路线图）。
+<p align="center">
+  <img src="docs/images/03-ui-board.png" alt="看板视图" width="720" />
+</p>
+
+## 功能
+
+- **自主任务流**：每条任务一个 `pi --mode rpc` 子进程，在工作区内自主完成
+  规划（`work/plan.json` + 分支问答）→ 执行（plan 驱动）→ 测试（`test_cmd`）→
+  独立验收官逐项判定（`work/review.json`，最多 3 次重试，用尽转人工）。
+- **看板与调度**：四阶段看板（等待/打磨/执行/验收）+ 跨项目总表；优先级抢占
+  （P0/P1 可抢运行中的 P2/P3）、拖动排序、任务依赖（父先于子）。
+- **人机协同**：分支问答（手动/超时自动）、阻塞决策卡（`block.json` 即停，
+  用户拍板后带决策恢复）、执行中实时 steer、留言板、done 后无限返工（复用同一会话）。
+- **完整过程可见**：事件流全量落库 —— 系统提示词（灰盒可折叠）、阶段注入、
+  思考、工具调用/结果、子代理独立框；「摘要 / 完整推理」双模式 + 分组筛选 + 一键导出 JSON。
+- **资产与预览**：工作产物/事件流里的文件可点开预览（图片直渲、JSON/代码/Markdown 全文、二进制下载）。
+- **历史会话导入**：把 Pi 的历史会话（`~/.pi/agent/sessions/**/*.jsonl`，装面板之前跑的）
+  作为「已完成」任务导入看板 —— 完整消息流可查，返工时 `switch_session` 接续原会话。
+- **技能三级管理**：全局（只读继承）/ 项目层 / 任务级（手动安装 skill 或 extension）。
+- **工程化**：单 Node 进程、单端口、零原生依赖；服务重启自动断点恢复；
+  双主题（Linear 风设计令牌）；中英双语；⌘K 命令面板。
+
+<p align="center">
+  <img src="docs/images/04-ui-task.png" alt="任务详情（完整推理模式）" width="720" />
+</p>
 
 ## 快速开始
 
@@ -16,81 +44,91 @@ npm run build        # 构建前端 → dist/
 npm start            # 单端口 8787：API + WebSocket + 静态文件
 ```
 
-开发模式（热重载）：`npm run dev`（server tsx watch + vite 5173，代理 /api 与 /ws）。
-
 - 界面：<http://localhost:8787>
 - 端口可用 `TP_PORT` 覆盖；数据目录默认 `./data`（`TP_DATA_DIR` 可覆盖）
+- 开发模式（热重载）：`npm run dev`（server tsx watch + vite 5173，代理 `/api` 与 `/ws`）
 
-## 架构速览
+## 架构
 
-- **单 Node 进程、单端口、零原生依赖**：express（API）+ ws（事件流）+ `node:sqlite`（WAL）
-- **执行器**：每任务一个 `pi --mode rpc` 子进程（cwd = 任务工作目录）；JSONL 协议、agent_settled 判静止、`extension_ui_request` 无人值守自动应答
-- **跨平台**：Ubuntu / Windows 一致（`path.join`、按平台 spawn、沙盒插件非冲突）
-- **状态机**：`ready →（手动启动）→ queued → planning → [waiting_input] → executing → [blocked] → testing → awaiting_confirm → done`（另有 interrupted / failed / cancelled；done/awaiting_confirm 可无限返工回到 planning，复用同一会话）
-- **事件流**：每任务 seq 单调 + WS 断线按 `since` 重放
+<p align="center">
+  <img src="docs/images/01-architecture.png" alt="架构" />
+</p>
 
-## P1 核心闭环
+- **单 Node 进程、单端口、零原生依赖**：express（REST）+ ws（事件流）+ `node:sqlite`（WAL）。
+- **执行器**：每任务一个 `pi --mode rpc` 子进程（cwd = 任务工作区）；JSONL 协议、
+  `agent_settled` 判静止、`extension_ui_request` 无人值守自动应答。
+- **事件流**：每任务 `seq` 单调 + WS 断线按 `since` 重放；全量消息落库，
+  前端「完整推理」模式直接消费，零额外请求。
+- **前缀缓存安全**：全局系统提示词固定在 `<workspace>/.pi/APPEND_SYSTEM.md`
+  （system 消息位，跨任务共享前缀）；任务交互全部 append-only
+  （`switch_session` = 字节级重放）。
+- **跨平台**：Ubuntu / Windows 行为一致（`path.join`、按平台 spawn、沙盒插件非冲突）。
 
-看板列表 / 7+1 列看板 / 任务详情（打磨计划、分支回答、阻塞决策卡、验收、留言板 + 短留言 steer / 长提示词大编辑框 + 附图）/ 技能三级（全局只读 · 项目层继承 · 任务级手动安装）/ 设置（并发、分支策略、模型、全局系统提示词 + 历史）/ 双主题（Linear 风令牌，亮/暗）。
+## 任务生命周期
 
-**真实 pi 执行**（P1）：每任务一个 `pi --mode rpc` 子进程，在工作目录内自主完成「规划（work/plan.json + 分支问答）→ 执行（plan 驱动，block.json 即停）→ 测试（test_cmd 走 RPC bash）→ 独立验收官逐项判定（work/review.json，最多 3 次重试，用尽转人工）」；执行中可实时 steer（下次 LLM 调用前生效）；阻塞/分支决策由用户拍板后自动恢复（`switch_session` 全量上下文重放 + 决策注入）；长提示词/附图机制同 P0.5（docs/design/05-architecture.md §9/§10）。
+<p align="center">
+  <img src="docs/images/02-lifecycle.png" alt="任务生命周期" />
+</p>
 
-实测三条真实任务全链路通过：纯执行→done；分支 3 问 + 中途 steer 干预→done；执行中 block.json→用户拍板→带决策恢复→验收通过→done。
+`ready →（手动启动）→ queued → planning → [waiting_input] → executing →
+[blocked] → testing → awaiting_confirm → done`；另有 `interrupted / failed /
+cancelled`（可恢复/可重试）。三个橙色闸门是用户唯一需要拍板的点：
 
-## P2 抢占与体验
+| 闸门 | 触发 | 恢复方式 |
+| --- | --- | --- |
+| `waiting_input` | 规划期分支问题（手动模式） | 用户逐题回答；超时（默认 30min，可调）按智能体推荐自动进入 |
+| `blocked` | 执行期写 `work/block.json` | 决策卡用户拍板 → 带决策注入恢复（全量上下文重放） |
+| `awaiting_confirm` | 验收通过 / 重试 3 次用尽 | 确认完成 → `done`；或带留言返工（清 plan，重新打磨，复用同一会话，不限次数） |
 
-- **优先级抢占**：槽位全满时，排队的 P0/P1 可抢占运行中的 P2/P3（stop runner + checkpoint + 自动断点恢复）；队列按 priority 排序。保守规则避免抖动。
-- **⌘K 命令面板**：Ctrl/⌘+K 打开；搜看板/任务（含 #num）/动作（导航、新建看板/任务、切主题/语言）；↑↓ 选择、↵ 执行、Esc 关闭；`?new=1` 让看板/任务页自动展开新建入口。
-- **事件流筛选/导出**：分组筛选（全部/消息/计划·执行/验收·阻塞/系统）+ 一键导出 JSON；前端直接消费 WS 事件（seq 去重，零额外请求）。
-- **资产预览**：点工作产物/事件流里的文件 → 弹窗查看（图片直渲、JSON/代码/Markdown 全文展示、二进制给下载）。
-- **服务重启恢复**：执行中任务转 interrupted + checkpoint，重启后自动断点恢复；优雅退出回收 pi 子进程。
-- **前缀缓存安全**：全局系统提示词固定在 `<workspace>/.pi/APPEND_SYSTEM.md`（system 消息位，跨任务共享前缀）；任务交互全部 append-only（switch_session = 字节级重放）。
-- **回归测试基建**：`npm test`（后端 15 项，stub 执行器 ~23s）/ `npm run test:ui`（puppeteer 人形 3 项）/ `npm run test:e2e`（真实 pi 冒烟）。
+## 历史会话导入
 
-P2 实现细节与提交点见 docs/design/06-roadmap.md。
+<p align="center">
+  <img src="docs/images/05-ui-import.png" alt="导入历史会话" width="720" />
+</p>
 
-## P3 总表与完整过程（当前）
+项目看板页 →「导入会话」：扫描 `~/.pi/agent/sessions`（`TP_SESSIONS_DIR` 可覆盖），
+按项目分组、搜索、多选。导入结果：
 
-- **手动启动 + 无限返工**：新任务默认「待准备」（不占槽位、不排队），在总表点「启动」才入队；done/待确认可带留言无限次打回，复用同一会话（清 plan + work 文件，重新打磨）。
-- **完整推理过程（full 模式）**：执行器转储 pi 的完整会话 —— 系统提示词（灰盒，可折叠，含压缩摘要）、各阶段注入（虚线框 + 规划/恢复/执行/验收标签）、用户留言（实线强调框）、助手气泡、思考（灰斜体）、工具调用/结果（代码框）、子代理（独立小框，槽位软约束 + 超限警告）。默认「摘要」模式只看关键事件，一键切换；事件筛选/导出两种模式通用。
-- **四阶段总表看板**：首页 = 跨项目总表（打磨/执行/验收三列 + 行按项目分组），高亮随任务左→右移动，返工跳回；历史任务页按项目分组（完成/失败/取消 + 过滤）；侧栏可直接管理看板。
-- **任务详情单屏终端式**：100vh 不滚动页面 —— 任务+描述钉顶、中间消息流唯一滚动区、底部 1/4 动作区（状态卡 / 计划·验收·产物 tabs）、状态条（当前动作 + 用时）、composer 永远在底。
-- **提示词模板可配**：规划/执行/验收/返工四个阶段注入提示词均可在设置页编辑（`{{占位符}}` 渲染 + 一键恢复默认）。
-- **会话长度**：全局默认 = 模型 contextWindow，可全局/逐任务覆盖；超限触发 pi 自动压缩（压缩摘要回写 full 模式）。
-- **系统提示词观测**：项目级 pi 扩展（`<workspace>/.pi/extensions/tp-observability/`，零全局足迹）在 `before_agent_start` 转储完整 system prompt，首条消息前作为 `system_prompt` 事件入流。
-- **主题**：蓝色默认强调色（可在设置切回 indigo）+ 字体大小缩放；toast 移至右上且不可点击（不遮挡 composer）。
-- **回归**：后端 19 项 + UI 人形 3 项（含 full/摘要切换、返工、总表启动）；`npm test && npm run test:ui`。
-
-P3 实现细节与提交点（M1a→M4）见 docs/design/06-roadmap.md。
-
-## P3.5 会话导入（当前）
-
-把 **pi 的历史会话**（装 Task Panel 之前跑的会话，`~/.pi/agent/sessions/**/*.jsonl`）作为任务导入看板：
-
-- **入口**：项目看板页 →「导入会话」——扫描会话目录，按项目（工作目录）分组，支持搜索/多选，默认隐藏 Task Panel 自身会话（可勾选显示）。
-- **导入结果**：任务落为「已完成」，工作区 = 原会话的工作目录 —— 产物面板直接列原项目文件；完整消息流（思考/工具调用/结果）在任务详情「全部」模式查看（导入任务自动切到该模式）。
-- **可返工**：checkpoint 指向原会话 JSONL，返工/提问时 pi 用 `switch_session` 接续原会话继续干。
-- **安全**：导入路径限定在会话目录内（防穿越）；单段文本 20k 字符截断；不改动原会话文件。
-
-P3.5 实现细节见 docs/design/06-roadmap.md。
+- 任务落为「已完成」，工作区 = 原会话的工作目录 —— 产物面板直接列原项目文件；
+- 完整消息流（思考/工具调用/结果）在任务详情「完整推理」模式查看（导入任务自动切到该模式）；
+- `checkpoint` 指向原会话 JSONL —— 返工/提问时 Pi 用 `switch_session` 接续原会话继续干；
+- 安全：导入路径限定在会话目录内（防穿越）；单段文本 20k 字符截断；不改动原会话文件。
 
 ## 测试
 
-三层测试，由快到慢；日常回归跑前两层（秒级，无需 pi/模型服务）：
+三层测试，由快到慢；日常回归跑前两层（秒级，无需 Pi/模型服务）：
 
 | 命令 | 内容 | 依赖 |
 | --- | --- | --- |
-| `npm test` | 后端 API 套件（node:test）：全生命周期 / 分支(手动+自动) / 阻塞决策 / 验收重试 / steer+留言 / 附图+防穿越 / 取消 / WS 实时+重放 / 重启恢复 / 优雅退出 / 优先级抢占 / P3（ready/rework/全量事件/设置钳制），19 项 | 无（stub 执行器，毫秒级） |
-| `npm run test:ui` | UI 人形测试（puppeteer-core 驱动本机 Edge/Chrome）：建看板→建任务→分支逐题回答→确认→卡片入 done 列；steer 短/长留言、主题/语言切换；16 张截图在 `test/ui-artifacts/` | 本机浏览器（可用 `TP_BROWSER` 指定） |
-| `npm run test:e2e` | 真实 pi + 真实模型服务的全链路冒烟（hello.txt 任务，验收+交付物落盘检查）；模型服务不可达时自动跳过 | pi 已登录 + vLLM 在线 |
+| `npm test` | 后端 API 套件（node:test）：全生命周期 / 分支 / 阻塞 / 验收重试 / steer+留言 / 附图+防穿越 / 取消 / WS 实时+重放 / 重启恢复 / 优雅退出 / 优先级抢占 / P3（ready/rework/全量事件/设置钳制）/ 会话导入，28 项 | 无（stub 执行器，毫秒级） |
+| `npm run test:ui` | UI 人形测试（puppeteer-core 驱动本机 Edge/Chrome）：建看板→建任务→分支逐题回答→确认→入 done 列；steer、主题/语言切换 | 本机浏览器（`TP_BROWSER` 可指定） |
+| `npm run test:e2e` | 真实 Pi + 真实模型服务的全链路冒烟（hello.txt 任务，验收+交付物落盘检查）；模型不可达时自动跳过 | Pi 已登录 + 模型服务在线 |
 
-后端测试用 `TP_EXECUTOR=stub` 起服务：`server/src/runner-stub.ts` 是确定性执行器（接口与真实 TaskRunner 一致），任务标题带标记切换剧本：`#branch` 分支问答 / `#block` 阻塞决策 / `#fail` 验收重试 / `#slow` 拉长执行窗口（steer/取消/重启）。改完代码后 `npm test && npm run test:ui` 即可回归。
+后端测试用 `TP_EXECUTOR=stub` 起服务：`server/src/runner-stub.ts` 是确定性执行器
+（接口与真实 TaskRunner 一致），任务标题带标记切换剧本：`#branch` 分支问答 /
+`#block` 阻塞决策 / `#fail` 验收重试 / `#slow` 拉长执行窗口（steer/取消/重启）。
 
-## 目录
+## 目录结构
 
 ```
-server/src/   db(schema) · bus(WS) · api(REST) · scheduler(状态机) · executor(PiSession, pi --mode rpc 封装) · runner(任务执行器: 规划/执行/阻塞/测试/验收/恢复) · runner-stub(测试用确定性执行器) · skills(三级扫描/安装) · index(入口)
-web/src/      styles(tokens+app) · lib(api/ws/md/img/fmt) · i18n(zh/en) · components(Layout) · pages(Boards/BoardDetail/TaskDetail/Skills/Settings)
-test/         helpers(起服/api/WS 基建) · backend.test(后端套件) · ui.test(UI 人形) · e2e-pi(真实冒烟)
-docs/design/  设计文档包（00-06）
+server/src/   db(schema) · bus(WS) · api(REST) · scheduler(状态机) · executor(PiSession) ·
+              runner(规划/执行/阻塞/测试/验收/恢复) · runner-stub(测试执行器) ·
+              sessions(历史会话扫描/导入) · skills(三级扫描/安装) · prompts(阶段模板)
+web/src/      styles(设计令牌) · lib(api/ws/md) · i18n(zh/en) · components(弹窗/命令面板) ·
+              pages(Boards/ProjectBoard/TaskDetail/Skills/Settings/History)
+test/         helpers(起服基建) · backend.test(后端套件) · ui.test(UI 人形) · e2e-pi(真实冒烟)
+docs/         design/(设计文档包 00-06) · src/(SVG 图源) · images/(渲染产物) · render.mjs
+workspaces/   各任务的独立工作区（运行时生成，不入库）
 ```
+
+## 文档
+
+设计文档包在 [docs/design/](docs/design/)：00 总览 → 01 UI 调研 → 02 设计系统 →
+03 信息架构 → 04 页面规格 → 05 架构 → 06 实施路线（含各阶段实现备注）。
+
+图表源文件在 `docs/src/*.svg`，`npm run docs:render` 可确定性重渲染
+（resvg-js，输出 `docs/images/*.png`）。
+
+## License
+
+[MIT](./LICENSE)

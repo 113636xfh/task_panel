@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 604">
+  <rect x="0" y="0" width="1280" height="604" fill="#ffffff"/>
+  <text x="60" y="44" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="26" font-weight="bold" fill="#1a202c">任务生命周期</text>
+  <text x="60" y="78" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#5a6a80">ready → 手动启动 → 排队；三个橙色闸门是用户唯一需要拍板的点；done 可无限返工（复用同一会话）</text>
+
+  <!-- 主路径（灰，done 绿） -->
+  <rect x="60" y="140" width="160" height="100" rx="10" fill="#f7f9fb" stroke="#94a3b8" stroke-width="2"/>
+  <text x="140" y="176" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="20" font-weight="bold" fill="#2d3748" text-anchor="middle">ready</text>
+  <text x="140" y="210" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#5a6a80" text-anchor="middle">手动启动 · 不占槽</text>
+
+  <rect x="260" y="140" width="160" height="100" rx="10" fill="#f7f9fb" stroke="#94a3b8" stroke-width="2"/>
+  <text x="340" y="176" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="20" font-weight="bold" fill="#2d3748" text-anchor="middle">queued</text>
+  <text x="340" y="210" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#5a6a80" text-anchor="middle">优先级序 · 抢占</text>
+
+  <rect x="460" y="140" width="160" height="100" rx="10" fill="#f7f9fb" stroke="#94a3b8" stroke-width="2"/>
+  <text x="540" y="176" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="20" font-weight="bold" fill="#2d3748" text-anchor="middle">planning</text>
+  <text x="540" y="210" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#5a6a80" text-anchor="middle">计划 + 分支问</text>
+
+  <rect x="660" y="140" width="160" height="100" rx="10" fill="#f7f9fb" stroke="#94a3b8" stroke-width="2"/>
+  <text x="740" y="176" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="20" font-weight="bold" fill="#2d3748" text-anchor="middle">executing</text>
+  <text x="740" y="210" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#5a6a80" text-anchor="middle">计划驱动 · 自停</text>
+
+  <rect x="860" y="140" width="160" height="100" rx="10" fill="#f7f9fb" stroke="#94a3b8" stroke-width="2"/>
+  <text x="940" y="176" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="20" font-weight="bold" fill="#2d3748" text-anchor="middle">testing</text>
+  <text x="940" y="210" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#5a6a80" text-anchor="middle">测试 + 独立验收</text>
+
+  <rect x="1060" y="140" width="160" height="100" rx="10" fill="#eefaf3" stroke="#22a06b" stroke-width="2"/>
+  <text x="1140" y="176" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="20" font-weight="bold" fill="#1e7a4c" text-anchor="middle">done</text>
+  <text x="1140" y="210" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#5a6a80" text-anchor="middle">交付完成</text>
+
+  <!-- 主路径箭头 -->
+  <line x1="220" y1="190" x2="246" y2="190" stroke="#718096" stroke-width="2.5"/>
+  <polygon points="246,183 246,197 260,190" fill="#718096"/>
+  <line x1="420" y1="190" x2="446" y2="190" stroke="#718096" stroke-width="2.5"/>
+  <polygon points="446,183 446,197 460,190" fill="#718096"/>
+  <line x1="620" y1="190" x2="646" y2="190" stroke="#718096" stroke-width="2.5"/>
+  <polygon points="646,183 646,197 660,190" fill="#718096"/>
+  <line x1="820" y1="190" x2="846" y2="190" stroke="#718096" stroke-width="2.5"/>
+  <polygon points="846,183 846,197 860,190" fill="#718096"/>
+  <line x1="1020" y1="190" x2="1046" y2="190" stroke="#718096" stroke-width="2.5"/>
+  <polygon points="1046,183 1046,197 1060,190" fill="#718096"/>
+  <text x="240" y="180" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#5a6a80" text-anchor="middle">启动</text>
+
+  <!-- 三个用户闸门（橙，唯一强调） -->
+  <rect x="450" y="320" width="180" height="100" rx="10" fill="#fdeacc" stroke="#e8850c" stroke-width="2"/>
+  <text x="540" y="356" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="20" font-weight="bold" fill="#9a4d00" text-anchor="middle">waiting_input</text>
+  <text x="540" y="390" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#5a6a80" text-anchor="middle">分支问答 · 超时自动</text>
+
+  <rect x="650" y="320" width="180" height="100" rx="10" fill="#fdeacc" stroke="#e8850c" stroke-width="2"/>
+  <text x="740" y="356" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="20" font-weight="bold" fill="#9a4d00" text-anchor="middle">blocked</text>
+  <text x="740" y="390" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#5a6a80" text-anchor="middle">用户拍板 · 自动恢复</text>
+
+  <rect x="850" y="320" width="180" height="100" rx="10" fill="#fdeacc" stroke="#e8850c" stroke-width="2"/>
+  <text x="940" y="356" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="20" font-weight="bold" fill="#9a4d00" text-anchor="middle">awaiting_confirm</text>
+  <text x="940" y="390" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#5a6a80" text-anchor="middle">验收通过/失败 · 重试3次</text>
+
+  <!-- 闸门虚线双向：下=挂起，上=恢复 -->
+  <line x1="522" y1="240" x2="522" y2="306" stroke="#718096" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <polygon points="514,306 530,306 522,320" fill="#718096"/>
+  <line x1="558" y1="320" x2="558" y2="254" stroke="#718096" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <polygon points="550,254 566,254 558,240" fill="#718096"/>
+  <text x="498" y="288" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#5a6a80" text-anchor="middle">挂起</text>
+  <text x="582" y="288" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#5a6a80" text-anchor="middle">恢复</text>
+
+  <line x1="722" y1="240" x2="722" y2="306" stroke="#718096" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <polygon points="714,306 730,306 722,320" fill="#718096"/>
+  <line x1="758" y1="320" x2="758" y2="254" stroke="#718096" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <polygon points="750,254 766,254 758,240" fill="#718096"/>
+  <text x="698" y="288" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#5a6a80" text-anchor="middle">挂起</text>
+  <text x="782" y="288" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#5a6a80" text-anchor="middle">恢复</text>
+
+  <line x1="922" y1="240" x2="922" y2="306" stroke="#718096" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <polygon points="914,306 930,306 922,320" fill="#718096"/>
+  <line x1="958" y1="320" x2="958" y2="254" stroke="#718096" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <polygon points="950,254 966,254 958,240" fill="#718096"/>
+  <text x="898" y="288" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#5a6a80" text-anchor="middle">验收</text>
+  <text x="982" y="288" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#5a6a80" text-anchor="middle">人工</text>
+
+  <!-- 返工回路（虚线）：done 底 → planning 左侧中心 -->
+  <path d="M 1140 240 L 1140 480 L 430 480 L 430 190 L 446 190" fill="none" stroke="#718096" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <polygon points="446,182 446,198 460,190" fill="#718096"/>
+  <text x="785" y="470" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#5a6a80" text-anchor="middle">返工：带留言打回 · 复用同一会话 · 不限次数</text>
+
+  <!-- 异常/终态（灰） -->
+  <text x="310" y="522" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#5a6a80">异常 / 终态</text>
+  <rect x="310" y="530" width="660" height="56" rx="10" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="7 5"/>
+  <rect x="330" y="542" width="180" height="32" rx="8" fill="#f7f9fb" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="420" y="564" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#2d3748" text-anchor="middle">interrupted · 自动恢复</text>
+  <rect x="550" y="542" width="180" height="32" rx="8" fill="#f7f9fb" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="640" y="564" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#2d3748" text-anchor="middle">failed · 可重试</text>
+  <rect x="770" y="542" width="180" height="32" rx="8" fill="#f7f9fb" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="860" y="564" font-family="'Noto Sans CJK SC','Noto Sans','Microsoft YaHei',sans-serif" font-size="15" fill="#2d3748" text-anchor="middle">cancelled</text>
+</svg>
